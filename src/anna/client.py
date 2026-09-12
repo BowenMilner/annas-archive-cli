@@ -1,5 +1,6 @@
 import hashlib
 import http.cookiejar
+import math
 import os
 import re
 import tempfile
@@ -215,13 +216,15 @@ class Client:
                 delay = exc.seconds + 1
                 if not same_mirror_slow or delay > deadline - time.monotonic():
                     raise
-                if wait_progress:
-                    wait_progress(delay)
+                wait_until = time.monotonic() + delay
                 remaining = delay
                 while remaining > 0:
-                    interval = min(30, remaining)
-                    time.sleep(interval)
-                    remaining -= interval
+                    if wait_progress:
+                        wait_progress(remaining)
+                    time.sleep(min(1, max(0, wait_until - time.monotonic())))
+                    remaining = max(0, math.ceil(wait_until - time.monotonic()))
+                if wait_progress:
+                    wait_progress(0)
         raise AnnaError("Download did not become available after bounded retries; try later.")
 
     def _download(

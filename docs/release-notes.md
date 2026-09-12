@@ -1,19 +1,21 @@
-Clearer CLI next steps in Anna's Archive CLI 0.2.0rc3.
+Live free-source countdowns in Anna's Archive CLI 0.2.0rc4.
 
-Search results now show copyable download, details and source commands using a real
-record MD5. The hints explain how to select another result and choose a download
-folder. Record details and source listings also show the next command, including
-the correct `--source` index. Explicit mirror, Cookie file, User-Agent and timeout
-options carry over into the examples. JSON output stays unchanged.
+Interactive terminals now show a `MM:SS` countdown that updates in place every
+second, then transitions to requesting the download. Remaining time uses a
+monotonic clock so scheduling delays do not extend the displayed countdown.
+Ctrl+C cancels the wait and closes the progress line cleanly.
+
+JSON mode and redirected stderr retain one waiting line per countdown; JSON stdout
+stays machine-readable. No new dependencies or browser runtime are required.
 
 ```sh
-uvx --from annas-archive-cli==0.2.0rc3 anna search '"Pride and Prejudice" "Gutenberg"' --lang en --ext epub --sort smallest --limit 3
+uvx --from annas-archive-cli==0.2.0rc4 anna download 51d2b22ca12a8b470b51f543298b34c9 -o pride-and-prejudice.epub
 ```
 
-No additional dependencies or browser runtime. Includes the browserless download
-and bounded countdown support from rc2. Upstream protection and source availability
-can still change; see `docs/live-verification.md` for the tested routes and limits.
+Includes the next-step guidance from rc3 and browserless download support from rc2.
+Upstream protection and source availability can still change; see
+`docs/live-verification.md` for the tested routes and limits.
 
 Wheel, source distribution and five native standalone archives are available with
-SHA-256 checksums and GitHub build attestations. Each artifact passes its platform's
-packaging checks. The binaries are not OS-signed or notarized.
+SHA-256 checksums and GitHub build attestations. The binaries are not OS-signed or
+notarized.

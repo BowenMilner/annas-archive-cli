@@ -128,13 +128,14 @@ def test_current_slow_source_to_verified_file(tmp_path):
     assert len(requests) == 4
 
 
-def test_free_source_countdown_then_download(monkeypatch, tmp_path):
+@pytest.mark.parametrize("sleep_overrun", [0, 2.4])
+def test_free_source_countdown_then_download(monkeypatch, tmp_path, sleep_overrun):
     now = [0.0]
     waits = []
     requests = []
 
     def sleep(seconds):
-        now[0] += seconds
+        now[0] += seconds + sleep_overrun
 
     monkeypatch.setattr("anna.client.time.monotonic", lambda: now[0])
     monkeypatch.setattr("anna.client.time.sleep", sleep)
@@ -157,8 +158,8 @@ def test_free_source_countdown_then_download(monkeypatch, tmp_path):
             max_wait=5,
             wait_progress=waits.append,
         )
-    assert waits == [3]
-    assert now[0] == 3
+    assert waits == ([3, 2, 1, 0] if sleep_overrun == 0 else [3, 0])
+    assert now[0] == (3 if sleep_overrun == 0 else 3.4)
     assert len(requests) == 2
     assert Path(result["path"]).read_bytes() == BOOK
 
@@ -398,6 +399,7 @@ def test_cli_record_download_selects_source_and_verifies(tmp_path, monkeypatch):
 def test_cli_countdown_progress_keeps_stdout_json(tmp_path, monkeypatch):
     requests = []
     digest = hashlib.md5(BOOK).hexdigest()
+    now = [0.0]
 
     def handler(request):
         requests.append(request)
@@ -410,7 +412,10 @@ def test_cli_countdown_progress_keeps_stdout_json(tmp_path, monkeypatch):
         return httpx.Response(200, content=BOOK)
 
     monkeypatch.setattr(cli, "Client", lambda **kw: client(handler))
-    monkeypatch.setattr("anna.client.time.sleep", lambda _: None)
+    monkeypatch.setattr("anna.client.time.monotonic", lambda: now[0])
+    monkeypatch.setattr(
+        "anna.client.time.sleep", lambda seconds: now.__setitem__(0, now[0] + seconds)
+    )
     result = CliRunner().invoke(
         cli.main,
         [
@@ -425,7 +430,7 @@ def test_cli_countdown_progress_keeps_stdout_json(tmp_path, monkeypatch):
     )
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["md5"] == digest
-    assert "waiting 2 seconds" in result.stderr
+    assert result.stderr == "Free source countdown: waiting 2 seconds...\n"
 
 
 @pytest.mark.parametrize(

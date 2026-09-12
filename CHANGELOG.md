@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0rc4
+
+- Update free-source countdowns every second in interactive terminals, showing
+  remaining `MM:SS` in place and a clear transition when requesting the download.
+- Calculate remaining time with a monotonic clock, including after scheduler delays.
+- Close the progress line cleanly on cancellation. Keep JSON and redirected stderr
+  free of redraw sequences, with one waiting message per countdown.
+
 ## 0.2.0rc3
 
 - Show copyable download, details and source commands after search results, using

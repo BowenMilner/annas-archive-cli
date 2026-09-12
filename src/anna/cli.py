@@ -118,6 +118,39 @@ def command_hint(ctx, *arguments):
     return shlex.join(words)
 
 
+class DownloadCountdown:
+    def __init__(self, interactive: bool):
+        self.interactive = interactive
+        self.active = False
+        self.width = 0
+
+    def __call__(self, remaining: int) -> None:
+        if not self.interactive:
+            if remaining > 0 and not self.active:
+                click.echo(f"Free source countdown: waiting {remaining} seconds...", err=True)
+            self.active = remaining > 0
+            return
+        if remaining > 0:
+            minutes, seconds = divmod(remaining, 60)
+            message = (
+                f"Free source countdown: {minutes:02d}:{seconds:02d} remaining (Ctrl+C to cancel)"
+            )
+            self.width = max(self.width, len(message))
+            click.echo("\r" + message.ljust(self.width), err=True, nl=False)
+            self.active = True
+        elif self.active:
+            message = "Countdown complete; requesting download..."
+            click.echo("\r" + message.ljust(self.width), err=True)
+            self.active = False
+            self.width = 0
+
+    def close(self) -> None:
+        if self.interactive and self.active:
+            click.echo(err=True)
+        self.active = False
+        self.width = 0
+
+
 class DownloadProgress:
     def __init__(self, enabled: bool):
         self.enabled = enabled
@@ -325,7 +358,9 @@ def download(ctx, target, source, output, directory, expected_md5, max_wait, jso
             target, expected_md5 = link.url, md5
         elif source:
             raise AnnaError("--source requires an MD5 or record URL.")
-        progress = DownloadProgress(not ctx.obj["json"] and sys.stderr.isatty())
+        interactive = not ctx.obj["json"] and sys.stderr.isatty()
+        progress = DownloadProgress(interactive)
+        countdown = DownloadCountdown(interactive)
         try:
             result = client.download(
                 target,
@@ -334,11 +369,10 @@ def download(ctx, target, source, output, directory, expected_md5, max_wait, jso
                 expected_md5,
                 progress=progress,
                 max_wait=max_wait,
-                wait_progress=lambda seconds: click.echo(
-                    f"Free source countdown: waiting {seconds} seconds...", err=True
-                ),
+                wait_progress=countdown,
             )
         finally:
+            countdown.close()
             progress.close()
     if ctx.obj["json"]:
         emit(result)
