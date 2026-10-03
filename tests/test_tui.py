@@ -260,3 +260,47 @@ def test_download_cancel_stays_open_until_worker_cleans_up(tmp_path):
             assert len(app.screen_stack) == 1
 
     asyncio.run(scenario())
+
+
+def test_tui_falls_back_and_resets_partial_byte_progress(tmp_path):
+    app = make_app(tmp_path)
+    original = app.client_factory
+
+    class AlternativeBackend(original):
+        def info(self, md5):
+            book = super().info(md5)
+            book.links = [
+                Link("First", "https://dead.example/file", "slow"),
+                Link("Second", "https://files.example/file", "slow"),
+            ]
+            return book
+
+        def download(self, url, **options):
+            if "dead.example" in url:
+                options["total_progress"](131072)
+                options["progress"](65536)
+                raise httpx.ReadTimeout("failed", request=httpx.Request("GET", url))
+            return super().download(url, **options)
+
+    app.client_factory = AlternativeBackend
+
+    async def scenario():
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.press(*"Pride", "enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await pilot.click("#download-book")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert isinstance(app.screen, DownloadScreen)
+            assert app.screen.source_index == 2
+            assert app.screen.bytes_received == len(DATA)
+            assert (tmp_path / "book.epub").read_bytes() == DATA
+            assert "checksum verified" in str(
+                app.screen.query_one("#download-status", Label).render()
+            )
+
+    asyncio.run(scenario())

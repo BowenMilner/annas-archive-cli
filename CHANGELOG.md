@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0a2 — download recovery
+
+- Prefer the record's listed direct Libgen file source before slow partner queues.
+- Retry alternative free sources after connection failures or unusable download pages,
+  with a bounded attempt count and one shared countdown budget.
+- Recognise observed copy-only download controls and prefer explicitly advertised
+  short-filename links; no verification scripts are executed.
+- Show the current source and network stage, and distinguish file-source timeouts
+  from a generic connection failure.
+- Reset byte progress between sources and retain checksum, no-overwrite, rate-limit
+  and cancellation protections. Explicit `--source` remains pinned.
+
+
 ## 0.3.0a1 — terminal book browser
 
 - Launch a Textual TUI with bare `anna`: searchable results, edition details,

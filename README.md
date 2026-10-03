@@ -65,7 +65,8 @@ The details view includes the description, file metadata and destination folder.
 Choose Download to save the selected edition. Real byte progress is shown;
 a percentage appears only when the server supplies a reliable file length.
 Unknown lengths use an activity indicator rather than an invented percentage.
-Free-source countdowns are displayed while waiting.
+Free-source countdowns are displayed while waiting. If a file server fails, the
+interface shows the next source attempt and resets progress for that source.
 
 Cancel removes unfinished files. An in-flight network operation may need to finish
 or reach its timeout before cancellation completes. The results remain available
@@ -155,8 +156,11 @@ saved language/format defaults and prompts in a terminal; use explicit filters a
 `--no-select` when adapting existing scripts.
 
 `--source` chooses the one-based source from `links`; otherwise download uses the
-first non-fast HTTP source. It does not automatically switch download sources.
-Free-source countdowns are honoured for up to 300 seconds; `--max-wait 0` fails
+a listed Libgen file source when available, followed by free partner sources.
+Without an explicit `--source`, up to three listed free HTTP sources are tried
+after connection failures, access errors or unusable download pages. Checksum failures,
+existing files, cancellation and rate limits stop the operation.
+Source attempts share a 300-second countdown budget; `--max-wait 0` fails
 immediately, and `--max-wait 600` permits a longer wait. Ctrl+C cancels.
 
 Record downloads verify the catalogue MD5. Downloads are streamed to temporary files
@@ -213,7 +217,8 @@ Configuration commands produce human-readable output.
 {"error":{"code":"operation_failed","type":"AnnaError","message":"No working mirror found..."}}
 ```
 
-Existing error codes and JSON fields are preserved; cancellation adds `download_cancelled`. English error messages are not
+Existing error codes and JSON fields are preserved; new codes include `download_cancelled`, `download_page_unavailable` and
+`download_sources_unavailable`. English error messages are not
 stable APIs. Mirror exhaustion reports the failure categories and recovery options;
 a pinned mirror retains the original detailed error.
 

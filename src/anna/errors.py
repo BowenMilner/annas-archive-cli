@@ -44,3 +44,11 @@ class DownloadWaitError(AnnaError):
 
 class DownloadCancelledError(AnnaError):
     code = "download_cancelled"
+
+
+class DownloadSourcesError(AnnaError):
+    code = "download_sources_unavailable"
+
+
+class DownloadPageError(AnnaError):
+    code = "download_page_unavailable"

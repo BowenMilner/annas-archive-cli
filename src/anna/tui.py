@@ -14,7 +14,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Input, Label, OptionList, ProgressBar, Select
 from textual.worker import get_current_worker
 
-from anna.client import Client
+from anna.client import Client, download_record
 from anna.config import load_config, save_config
 from anna.errors import AnnaError, DownloadCancelledError
 from anna.parsing import Book, author_matches
@@ -30,6 +30,8 @@ def book_summary(book):
 
 
 def error_message(exc):
+    if isinstance(exc, httpx.TimeoutException):
+        return "The file source timed out. Try again later or choose another edition."
     if isinstance(exc, httpx.HTTPError):
         return "Connection failed. Check your network and try again."
     if isinstance(exc, OSError):
@@ -167,6 +169,8 @@ class DownloadScreen(ModalScreen):
         self.running = True
         self.bytes_received = 0
         self.total = None
+        self.source_index = 1
+        self.source_count = 1
         self.last_update = 0.0
 
     def compose(self) -> ComposeResult:
@@ -197,6 +201,21 @@ class DownloadScreen(ModalScreen):
     def cancel_download(self):
         self.action_cancel()
 
+    def start_source(self, index, total):
+        self.source_index = index
+        self.source_count = total
+        self.bytes_received = 0
+        self.last_update = 0.0
+        self.total = None
+        self.query_one("#progress", ProgressBar).update(total=None, progress=0)
+        self.show_request("Requesting download link…")
+
+    def show_request(self, phase):
+        if not self.cancel_event.is_set():
+            self.query_one("#download-status", Label).update(
+                f"Free source {self.source_index}/{self.source_count} · {phase}"
+            )
+
     def set_total(self, total):
         self.total = total
         self.query_one("#progress", ProgressBar).update(total=total, progress=0)
@@ -213,7 +232,9 @@ class DownloadScreen(ModalScreen):
     def show_wait(self, seconds):
         if not self.cancel_event.is_set():
             self.query_one("#download-status", Label).update(
-                f"Free source · {seconds}s remaining" if seconds else "Requesting file…"
+                f"Free source {self.source_index}/{self.source_count} · {seconds}s remaining"
+                if seconds
+                else "Countdown complete · requesting download link…"
             )
 
     def finish(self, message, success):
@@ -242,20 +263,16 @@ class DownloadScreen(ModalScreen):
             with self.client_factory(**self.options) as client:
                 # Resolve sources on the active mirror, not an earlier search session.
                 book = client.info(self.book.md5)
-                source = next(
-                    (
-                        link
-                        for link in book.links
-                        if link.kind != "fast" and link.url.startswith(("http://", "https://"))
+                result = download_record(
+                    client,
+                    book,
+                    source_progress=lambda index, total: self.app.call_from_thread(
+                        self.start_source, index, total
                     ),
-                    None,
-                )
-                if not source:
-                    raise AnnaError("No free HTTP download source; try another edition.")
-                result = client.download(
-                    source.url,
+                    request_progress=lambda phase: self.app.call_from_thread(
+                        self.show_request, phase
+                    ),
                     directory=self.directory,
-                    expected_md5=book.md5,
                     progress=progress,
                     wait_progress=lambda seconds: self.app.call_from_thread(
                         self.show_wait, seconds
