@@ -382,3 +382,33 @@ none reached a file transfer in this comparison. No new official origin was foun
 in the current list. This result is distinct from the earlier `.pk` page success
 followed by file-server HTTP 504: page access and file availability remain separate
 conditions, and a catalogue-mirror switch does not guarantee a different file host.
+
+## Untouched fork-point comparison — 4 October 2026
+
+The original checkout was exported from exact fork-point commit
+`001ab3250e9cd829e7225b6385e3fb8aac999090` (version `0.2.0rc4`) into an isolated
+workspace and installed using its original lockfile. The user's installed fork
+was not replaced. Both implementations were invoked with the same record MD5,
+listed source 36 (slow route 14), 180-second HTTP inactivity allowance, 60-second
+queue budget and fresh isolated configuration without imported browser cookies.
+Downloads targeted temporary directories and any successful EPUB would have
+required the catalogue MD5 and ZIP integrity check.
+
+The untouched original reproduced HTTP 504 in the live download chain:
+
+| Version | Origin | Result | Elapsed | Ebook saved |
+| --- | --- | --- | ---: | --- |
+| Original 0.2.0rc4 | `.gd` | HTTPStatusError, HTTP 504 | 67.9 seconds | No |
+| Original 0.2.0rc4 | `.pk` | HTTPStatusError, HTTP 504 | 68.0 seconds | No |
+| Original 0.2.0rc4 | `.gl` | RateLimitError | 8.4 seconds | No |
+| Installed fork 0.3.0a10 | `.gd` | RateLimitError | 7.7 seconds | No |
+| Installed fork 0.3.0a10 | `.gl` | RateLimitError | 8.9 seconds | No |
+| Installed fork 0.3.0a10 | `.pk` | RateLimitError | 8.5 seconds | No |
+
+The original's exact reported error was “Server returned HTTP 504; check the
+mirror, record or access permissions.” No further requests were launched after
+this comparison reported rate limiting; already-running original attempts
+completed. The comparison reproduces the upstream 504 on the untouched original,
+not an original 30-second default ReadTimeout. It does not establish that all fork
+behaviour is equivalent or free of defects. The fork's same 504 had already been
+reproduced in the preceding long-request and independent-runner checks.
