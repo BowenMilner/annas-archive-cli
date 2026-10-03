@@ -493,3 +493,22 @@ def test_download_route_with_query_is_not_copied_to_another_mirror(tmp_path):
             )
     assert len(requests) == 2
     assert all(request.url.host == "annas-archive.gd" for request in requests)
+
+
+def test_gateway_timeout_reports_actual_file_host_without_signed_url():
+    def handle(request):
+        if request.url.host == "archive.example":
+            return httpx.Response(
+                200,
+                text='<a download href="https://files.example/private/file?token=secret">Download</a>',
+                headers={"content-type": "text/html"},
+            )
+        return httpx.Response(504, text="<html>Gateway Time-out</html>")
+
+    with Client(BASE, transport=httpx.MockTransport(handle)) as client:
+        with pytest.raises(DownloadSourcesError) as error:
+            download_record(client, record(1))
+    message = str(error.value)
+    assert "HTTP 504 (upstream timeout) (files.example)" in message
+    assert "secret" not in message and "/private" not in message
+    assert not error.value.verification_url

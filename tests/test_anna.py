@@ -443,3 +443,17 @@ def test_cli_countdown_progress_keeps_stdout_json(tmp_path, monkeypatch):
 )
 def test_bad_options(args):
     assert CliRunner().invoke(cli.main, args).exit_code == 2
+
+
+@pytest.mark.parametrize(
+    "code,reason", [(502, "upstream service failed"), (504, "upstream service timed out")]
+)
+def test_gateway_failures_do_not_suggest_browser_or_permission_fixes(code, reason):
+    from anna.errors import HTTPStatusError
+
+    with client(lambda request: httpx.Response(code, text="<html>Gateway failure</html>")) as api:
+        with pytest.raises(HTTPStatusError) as error:
+            api.download(BASE + "/file")
+    assert reason in str(error.value)
+    assert "permissions" not in str(error.value)
+    assert error.value.status_code == code

@@ -211,6 +211,8 @@ owner-only files. Unrelated sites' cookies are excluded. Delete that directory t
 forget saved sessions and mirror preferences. No browser passwords are read.
 The website can require another check after expiry, network/IP changes or changed
 browser settings; Anna cannot guarantee permanent clearance or solve the check.
+The site can require fresh verification before a cookie's normal expiry; keeping
+the cookie file does not extend the site's clearance period.
 Blocked HTTP responses do not overwrite the saved browser session. Server-renewed
 cookies also survive the move from catalogue to download within the same run. Remaining slow
 routes behind the same verification block are skipped; independent HTTP sources
@@ -246,6 +248,8 @@ keeping the exact selected MD5 and route index. Once a page works, later routes
 use that mirror. Explicit mirrors and source selections stay pinned; query-bearing
 routes and signed external file URLs are never copied to another mirror. A working
 catalogue or countdown page does not guarantee that its file server is available.
+HTTP 502/504 errors identify an upstream service failure; importing browser
+cookies again does not repair that file server.
 
 A rate limit stops the request and asks you to try later. The CLI does not route
 round it. Mirror availability changes; deterministic tests are independent of live
