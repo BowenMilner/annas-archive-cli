@@ -78,3 +78,33 @@ substitute a different edition or disable checksum/TLS verification.
 This verifies the live network and UI event flow on this host. It is separate from
 manual acceptance in the user's terminal and does not establish availability of all
 records or source servers.
+
+## Large illustrated EPUB diagnosis — 3 October 2026
+
+The user subsequently reported three file-source timeouts for a 24.8 MB Austen
+edition after reopening the installed app. Several matching Gutenberg EPUB records
+exist, including `9401a1d7f8532732a4d8d1a5fa2086e0`; these do not list the direct
+Libgen source used by the successful small-book check. The precise record selected
+by the user was not established from the screenshot and size alone. Later partner
+sources #4 and #16 for the above record returned browser-verification challenges.
+No successful transfer of that Anna catalogue file is claimed.
+
+The installed CLI downloaded the official illustrated EPUB linked by
+[Project Gutenberg ebook 1342](https://www.gutenberg.org/ebooks/1342), using
+`https://www.gutenberg.org/ebooks/1342.epub.images`:
+
+- Downloaded size: 24848783 bytes.
+- Measured MD5: `68ce39fde86db21b727fa9eb35d6b7cc`.
+- EPUB mimetype and ZIP CRC passed; temporary files were removed afterwards.
+
+The installed TUI transfer worker then downloaded the same official file, with
+exactly 24848783 received bytes and the correct progress total, and verified the
+above checksum and EPUB integrity. That transfer probe injected the official
+edition's catalogue metadata; search does not currently offer this official source.
+This tests large-file transfer and progress, not an end-to-end catalogue fallback
+or the user's original selection.
+
+The failure remains a source-availability limitation, not an established file-size
+limit. The automatic three-source fallback does not establish that every listed
+source is unavailable. A direct official-source alternative must identify its
+edition explicitly rather than silently substituting a different checksum.
