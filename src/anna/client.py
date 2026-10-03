@@ -29,7 +29,7 @@ from anna.parsing import Book, document, parse_info, parse_search, record_id, te
 from anna.session import load_session, preferred_origin, remember_origin, save_session
 
 DEFAULT_BASE_URL = "https://annas-archive.gd"
-DEFAULT_MIRRORS = (DEFAULT_BASE_URL, "https://annas-archive.gl")
+DEFAULT_MIRRORS = (DEFAULT_BASE_URL, "https://annas-archive.gl", "https://annas-archive.pk")
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -125,8 +125,11 @@ def download_record(
             "max_wait": max(0, int(max_wait - (time.monotonic() - started))),
             "wait_progress": report_wait,
         }
-        if isinstance(client, Client) and source is None:
-            attempt_options["contact_deadline"] = time.monotonic() + remaining
+        if isinstance(client, Client):
+            if source is None:
+                attempt_options["contact_deadline"] = time.monotonic() + remaining
+            else:
+                attempt_options["mirror_fallback"] = False
         try:
             return client.download(link.url, expected_md5=book.md5, **attempt_options)
         except (
@@ -306,6 +309,7 @@ class Client:
         self._explicit_cookies = cookies is not None
         self._default_agent = user_agent
         self._session_origins: dict[str, str] = {}
+        self._saved_session_agents: dict[str, str | None] = {}
         self._verified_session_origins: set[str] = set()
         parsed = urlsplit(self.base_url)
         if parsed.path or parsed.query or parsed.fragment:
@@ -360,9 +364,12 @@ class Client:
         origin = f"{parsed.scheme}://{parsed.netloc}"
         agent = inherited_agent or self._default_agent
         if not self._explicit_cookies:
-            jar, saved_agent = load_session(origin)
-            for cookie in jar:
-                self.http.cookies.jar.set_cookie(cookie)
+            if origin not in self._session_origins:
+                jar, saved_agent = load_session(origin)
+                for cookie in jar:
+                    self.http.cookies.jar.set_cookie(cookie)
+                self._saved_session_agents[origin] = saved_agent
+            saved_agent = self._saved_session_agents.get(origin)
             if saved_agent and self._default_agent == DEFAULT_USER_AGENT:
                 agent = saved_agent
         self.http.headers["User-Agent"] = agent
@@ -370,7 +377,10 @@ class Client:
 
     def _verified_session(self, url: str) -> None:
         target = urlsplit(url)
-        self._verified_session_origins.add(f"{target.scheme}://{target.netloc}")
+        origin = f"{target.scheme}://{target.netloc}"
+        self._verified_session_origins.add(origin)
+        if origin == self.base_url and origin in self.mirrors:
+            self._catalogue_success = True
 
     def verify_session(self, url: str) -> None:
         """Check an imported session on its exact page, without downloading a file."""
@@ -378,16 +388,33 @@ class Client:
         if (target.scheme, target.netloc) != (base.scheme, base.netloc):
             raise InvalidInputError("Session checks must stay on the selected mirror.")
         self.activate_session(url)
-        with self.http.stream("GET", url) as response:
-            checked = httpx.Response(
-                response.status_code,
-                headers=response.headers,
-                content=self._read_page(response),
-                request=response.request,
+        address = httpx.URL(url)
+        if re.fullmatch(r"/slow_download/[0-9a-f]{32}/\d+/\d+/?", address.path):
+            retry = address.copy_with(
+                raw_path=address.raw_path.replace(b"/slow_download/", b"/slow%5Fdownload/", 1)
             )
-            check_status(checked)
-            document(checked.text)
-        self._verified_session_origins.add(self.base_url)
+        else:
+            query = address.query + (b"&" if address.query else b"") + b"check=%31"
+            retry = address.copy_with(query=query)
+        for index, candidate in enumerate((address, retry)):
+            try:
+                with self.http.stream("GET", candidate) as response:
+                    checked = httpx.Response(
+                        response.status_code,
+                        headers=response.headers,
+                        content=self._read_page(response),
+                        request=response.request,
+                    )
+                    check_status(checked)
+                    document(checked.text)
+                self._verified_session(str(response.url))
+                return
+            except ChallengeError as exc:
+                self._verified_session_origins.discard(self.base_url)
+                if index:
+                    exc.origin = self.base_url
+                    exc.verification_url = url
+                    raise
 
     def page(self, path: str, params: dict | None = None) -> httpx.Response:
         self.activate_session(self.base_url)
@@ -485,18 +512,30 @@ class Client:
         request_progress: Callable[[str], None] | None = None,
         file_validator: Callable[[Path], None] | None = None,
         contact_deadline: float | None = None,
+        mirror_fallback: bool = True,
     ) -> dict:
         if max_wait < 0:
             raise InvalidInputError("--max-wait cannot be negative.")
         deadline = time.monotonic() + max_wait
         parsed = httpx.URL(http_url(url))
         base = httpx.URL(self.base_url)
+        slow_path = bool(re.fullmatch(r"/slow_download/[0-9a-f]{32}/\d+/\d+/?", parsed.path))
+        route_origin = f"{parsed.scheme}://{parsed.netloc.decode()}"
+        automatic_route = mirror_fallback and not parsed.query
+        if automatic_route and len(self.mirrors) > 1 and slow_path and route_origin in self.mirrors:
+            parsed = parsed.copy_with(scheme=base.scheme, host=base.host, port=base.port)
+            url = str(parsed)
         same_mirror_slow = (parsed.scheme, parsed.host, parsed.port) == (
             base.scheme,
             base.host,
             base.port,
-        ) and bool(re.fullmatch(r"/slow_download/[0-9a-f]{32}/\d+/\d+/?", parsed.path))
-        for _ in range(6):
+        ) and slow_path
+        mirror_retries = (
+            [mirror for mirror in self.mirrors if mirror != self.base_url]
+            if automatic_route
+            else []
+        )
+        for _ in range(6 + 2 * len(mirror_retries)):
             check_cancelled(cancelled)
             try:
                 return self._download(
@@ -516,13 +555,33 @@ class Client:
                 exc.origin = exc.origin or f"{target.scheme}://{target.netloc}"
                 exc.verification_url = url
                 self._verified_session_origins.discard(exc.origin)
-                if not same_mirror_slow or not parsed.raw_path.startswith(b"/slow_download/"):
+                if not same_mirror_slow:
                     raise
-                # Keep retries on this mirror and preserve the server's signed query.
-                parsed = parsed.copy_with(
-                    raw_path=parsed.raw_path.replace(b"/slow_download/", b"/slow%5Fdownload/", 1)
-                )
-                url = str(parsed)
+                if parsed.raw_path.startswith(b"/slow_download/"):
+                    # Preserve the server's signed query for this same-mirror retry.
+                    parsed = parsed.copy_with(
+                        raw_path=parsed.raw_path.replace(
+                            b"/slow_download/", b"/slow%5Fdownload/", 1
+                        )
+                    )
+                    url = str(parsed)
+                elif mirror_retries and exc.origin == self.base_url:
+                    # Only remap the catalogue's public slow route, never a signed
+                    # file URL or a challenged external partner. Explicit mirrors
+                    # have no candidates and remain pinned.
+                    self.base_url = mirror_retries.pop(0).rstrip("/")
+                    replacement = httpx.URL(self.base_url)
+                    parsed = parsed.copy_with(
+                        scheme=replacement.scheme,
+                        host=replacement.host,
+                        port=replacement.port,
+                        raw_path=parsed.raw_path.replace(
+                            b"/slow%5Fdownload/", b"/slow_download/", 1
+                        ),
+                    )
+                    url = str(parsed)
+                else:
+                    raise
             except DownloadWaitError as exc:
                 delay = exc.seconds + 1
                 if not same_mirror_slow or delay > deadline - time.monotonic():

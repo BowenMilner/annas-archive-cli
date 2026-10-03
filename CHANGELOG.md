@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0a9 — recover blocked download pages across official mirrors
+
+- Include the archive-advertised `.pk` mirror after `.gd` and `.gl`.
+- Apply automatic mirror recovery to public slow-download pages, not just search
+  and details. Keep the exact MD5 and route index and remember a working page
+  mirror even if its separate file server times out. Later routes use that mirror.
+- Explicit mirrors, explicit source selections, query-bearing routes and signed
+  external file links remain pinned. Rate limits stop requests without fallback.
+- Keep server-renewed cookies in memory between catalogue and download requests,
+  rather than overwriting them by reloading an older saved session on every hop.
+- Guided session checks now use the same bounded equivalent-route retry as the
+  downloader, instead of rejecting a session that that retry can use.
+- 126 deterministic tests pass. Live `.pk` catalogue and countdown pages worked
+  for the exact 24.8 MB record, but fresh file-server requests still timed out.
+
 ## 0.3.0a8 — check browser-session reuse before retrying
 
 - Validate imported sessions against the exact challenged page before reporting
