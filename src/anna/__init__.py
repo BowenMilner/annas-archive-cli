@@ -1,3 +1,3 @@
 """Anna's Archive CLI."""
 
-__version__ = "0.3.0a3"
+__version__ = "0.3.0a4"

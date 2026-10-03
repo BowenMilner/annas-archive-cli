@@ -10,7 +10,8 @@ It stays responsive while network work runs in the background.
 
 ![Terminal book browser](docs/tui-results.svg)
 
-Bookfinder fills the terminal. On wider screens, highlighted editions have a live
+Bookfinder fills the terminal cell grid. If your terminal adds pixel padding
+around that grid, set its padding to zero for a window-edge layout. On wider screens, highlighted editions have a live
 details pane; smaller terminals use a full-width details view.
 
 Use it only for public-domain books or files you are otherwise entitled to download.
@@ -55,7 +56,7 @@ Author filtering recognises surname-first records such as “Austen, Jane”.
 | --- | --- |
 | Enter in a search field | Search |
 | ↑ / ↓ in results | Move between editions |
-| Enter on a result | Open details |
+| Enter on a result | Focus Download in the wide preview; open details on small screens |
 | Tab / Shift+Tab | Move between controls |
 | / from results | Return to search |
 | Ctrl+S or Settings button | Edit saved preferences |
@@ -199,8 +200,10 @@ browser settings; Anna cannot guarantee permanent clearance or solve the check.
 
 For matching English EPUB titles and authors, Bookfinder checks Project Gutenberg
 for an official public-domain record and its advertised illustrated EPUB. Choose
-**Download official Gutenberg edition** to download that separately labelled
-edition, including after archive sources fail. It is never selected silently.
+**Download official EPUB** to download that separately labelled
+edition, including after archive sources fail. When available, it is the primary
+action; **Try archive sources** remains an explicit alternative. It is never
+selected silently.
 
 Gutenberg's download count is labelled **last 30 days**; Anna's count belongs to
 the selected Anna record. The official EPUB is checked for length, EPUB mimetype

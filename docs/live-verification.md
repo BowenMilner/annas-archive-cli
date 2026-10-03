@@ -128,3 +128,20 @@ Firefox import restricted to one site's cookies, saved-session reuse across new
 clients, per-source browser identity and setup retry. Browser session tests use
 synthetic cookies; no live human verification or universal CAPTCHA clearance is
 claimed. Checks may recur after expiry or a changed network/browser identity.
+
+## Visible terminal acceptance — controls update
+
+Version 0.3.0a4 was launched in the user's actual Kitty window. Search for
+Pride and Prejudice with author Jane Austen returned the same 24.8 MB record.
+Clicking that result kept the existing preview; selecting its outlined primary
+Download official EPUB action opened the compact activity strip and saved
+`~/Books/gutenberg-1342-illustrated.epub`. Independent validation found 24,848,783
+bytes, MD5 `68ce39fde86db21b727fa9eb35d6b7cc`, correct EPUB mimetype and passing
+ZIP CRCs. The three original archive sources still timed out before this explicit
+alternative was selected.
+
+The user's Kitty theme had 24-pixel terminal padding. A backed-up host-local
+change set that padding to zero and the real window was checked after reloading.
+This affects the normal shell too; it is not a repository setting. The app colours
+fractional-cell terminal margins while running and restores the configured
+background on exit.
