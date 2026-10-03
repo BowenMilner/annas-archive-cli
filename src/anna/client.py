@@ -49,7 +49,7 @@ def download_record(
     source_progress: Callable[[int, int], None] | None = None,
     **options,
 ) -> dict:
-    """Try at most three listed free sources, keeping the selected record checksum."""
+    """Try up to sixteen listed free sources, keeping the selected record checksum."""
     if source is not None:
         if not 1 <= source <= len(book.links):
             raise AnnaError(f"Record has {len(book.links)} sources; --source is out of range.")
@@ -76,7 +76,7 @@ def download_record(
             if link.url not in seen:
                 seen.add(link.url)
                 candidates.append(link)
-        candidates = candidates[:3]
+        candidates = candidates[:16]
     if not candidates:
         raise AnnaError("No free HTTP download source; try another edition.")
     failures = []
@@ -96,7 +96,13 @@ def download_record(
         }
         try:
             return client.download(link.url, expected_md5=book.md5, **attempt_options)
-        except (httpx.TransportError, HTTPStatusError, ChallengeError, DownloadPageError) as exc:
+        except (
+            httpx.TransportError,
+            HTTPStatusError,
+            ChallengeError,
+            DownloadPageError,
+            DownloadWaitError,
+        ) as exc:
             check_cancelled(options.get("cancelled"))
             if source is not None:
                 raise  # An explicit source must remain pinned.
@@ -107,6 +113,14 @@ def download_record(
                 except RuntimeError:
                     pass
             reason = "timed out" if isinstance(exc, httpx.TimeoutException) else "was unavailable"
+            if isinstance(exc, DownloadWaitError):
+                reason = "exceeded the remaining queue budget"
+            elif isinstance(exc, ChallengeError):
+                reason = "needs a browser check"
+            elif isinstance(exc, HTTPStatusError):
+                status = re.search(r"HTTP (\d{3})", str(exc))
+                if status:
+                    reason = f"returned HTTP {status[1]}"
             failures.append(f"Source {index} {reason} ({host})")
             if isinstance(exc, ChallengeError):
                 parsed = urlsplit(link.url)

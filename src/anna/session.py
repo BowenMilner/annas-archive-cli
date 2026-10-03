@@ -1,4 +1,4 @@
-"""Private, site-scoped browser sessions; never read unrelated browser cookies."""
+"""Private browser sessions; query and import cookies only for the selected site."""
 
 import configparser
 import hashlib
@@ -140,22 +140,62 @@ def firefox_agent():
     return f"Mozilla/5.0 (X11; Linux x86_64; rv:{version}) Gecko/20100101 Firefox/{version}"
 
 
+def firefox_rows(database, host, partition):
+    query = (
+        "SELECT name,value,host,path,expiry,isSecure,isHttpOnly FROM moz_cookies "
+        "WHERE host IN (?, ?) AND originAttributes IN ('', ?)"
+    )
+    parameters = (host, "." + str(host), partition)
+    try:
+        with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=0.2)) as db:
+            return db.execute(query, parameters).fetchall()
+    except sqlite3.OperationalError as exc:
+        if getattr(exc, "sqlite_errorcode", 0) & 0xFF not in {
+            sqlite3.SQLITE_BUSY,
+            sqlite3.SQLITE_LOCKED,
+        }:
+            raise
+    # Firefox can hold an exclusive database lock. Keep a short-lived, private
+    # opaque snapshot including committed WAL data; query only this site's rows.
+    with tempfile.TemporaryDirectory(prefix="anna-firefox-") as folder:
+        target = Path(folder) / "cookies.sqlite"
+        sources = [database, Path(str(database) + "-wal"), Path(str(database) + "-journal")]
+        for _ in range(3):
+            before = {
+                source: (source.stat().st_size, source.stat().st_mtime_ns)
+                for source in sources
+                if source.exists()
+            }
+            for suffix in ("", "-wal", "-journal", "-shm"):
+                Path(str(target) + suffix).unlink(missing_ok=True)
+            for source in before:
+                destination = Path(folder) / source.name
+                shutil.copyfile(source, destination)
+                destination.chmod(0o600)
+            after = {
+                source: (source.stat().st_size, source.stat().st_mtime_ns)
+                for source in sources
+                if source.exists()
+            }
+            if before == after:
+                with closing(sqlite3.connect(target, timeout=0.2)) as db:
+                    return db.execute(query, parameters).fetchall()
+        raise AnnaError(
+            "Firefox's session is changing. Close Firefox and try Use Firefox session again."
+        )
+
+
 def import_firefox(origin, user_agent=None):
     profile = firefox_profile()
     database = profile / "cookies.sqlite"
     host = urlsplit(origin).hostname
     jar = http.cookiejar.MozillaCookieJar()
     try:
-        with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=2)) as db:
-            # The query excludes every other site's cookies, including signed-in accounts.
-            rows = db.execute(
-                "SELECT name,value,host,path,expiry,isSecure,isHttpOnly FROM moz_cookies "
-                "WHERE host IN (?, ?) AND originAttributes IN ('', ?)",
-                (host, "." + str(host), f"^partitionKey=({urlsplit(origin).scheme},{host})"),
-            ).fetchall()
+        rows = firefox_rows(database, host, f"^partitionKey=({urlsplit(origin).scheme},{host})")
     except sqlite3.Error as exc:
         raise AnnaError(
-            "Cannot read this site's Firefox session. Finish the browser check first."
+            "Cannot read this site's Firefox session database. "
+            "Close Firefox and retry Use Firefox session."
         ) from exc
     for name, value, domain, path, expiry, secure, http_only in rows:
         jar.set_cookie(

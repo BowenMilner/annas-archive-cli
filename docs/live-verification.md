@@ -145,3 +145,32 @@ change set that padding to zero and the real window was checked after reloading.
 This affects the normal shell too; it is not a repository setting. The app colours
 fractional-cell terminal margins while running and restores the configured
 background on exit.
+
+
+## Running Firefox session import and remaining archive failure
+
+Version 0.3.0a5 was installed on 3 October 2026. The user's default Firefox
+profile held an exclusive lock on cookies.sqlite. The old reader consequently
+reported a session-read failure despite successful browser verification.
+The installed replacement imported eight current cookies for annas-archive.gd
+with Firefox still running and saved its browser identity. No cookie values
+were logged. Regression tests cover exclusive locks in rollback-journal and WAL
+modes and exclude unrelated sites from the saved session.
+
+The original 24.8 MB record remains fb73d4fd19b0da98923365cb85a03a2b.
+Its sixteen listed free partner routes are now eligible for bounded fallback;
+an exhausted queue budget no longer prevents trying a later ready route.
+Archive downloads remain the primary action and require this exact MD5.
+
+Live connections to the file hosts succeeded quickly, but signed file transfers
+from multiple hosts timed out before response headers. A longer earlier request
+returned HTTP 504; a later request returned a rate-limit response. The real
+Firefox partner download page passed its browser check and warned of heavy
+activity from the current IP; opening its exact file link did not establish a
+successful transfer. Further network probes were stopped after the rate limit.
+No transfer of this exact archive record is claimed. The VPN was left unchanged.
+
+Validation: 106 deterministic tests passed, as did Ruff and application type
+checks and wheel/source builds. The installed 0.3.0a5 session reader was exercised
+against the live running Firefox profile. Full archive-download acceptance remains
+open pending file-server availability and expiry of the rate limit.

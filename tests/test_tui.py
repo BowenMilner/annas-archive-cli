@@ -425,7 +425,7 @@ def test_wide_selection_keeps_preview_and_download_opens_only_activity_strip(tmp
     asyncio.run(scenario())
 
 
-def test_official_download_is_the_prominent_preview_action(tmp_path, monkeypatch):
+def test_archive_remains_primary_when_official_alternative_exists(tmp_path, monkeypatch):
     from test_gutenberg import backend, find_edition, selected
 
     with backend() as client:
@@ -441,11 +441,11 @@ def test_official_download_is_the_prominent_preview_action(tmp_path, monkeypatch
             await app.workers.wait_for_complete()
             await pilot.press("enter")
             assert len(app.screen_stack) == 1
-            assert app.focused.id == "official-download"
+            assert app.focused.id == "download-book"
             assert app.focused.variant == "primary"
             archive = app.query_one("#download-book", Button)
-            assert str(archive.label) == "Try archive sources"
-            assert archive.variant == "default"
-            assert app.focused.region.bottom < archive.region.y
+            assert str(archive.label) == "Download archive file"
+            assert archive.variant == "primary"
+            assert app.query_one("#official-download", Button).variant == "default"
 
     asyncio.run(scenario())

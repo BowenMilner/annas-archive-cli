@@ -93,7 +93,7 @@ def test_no_site_session_import_is_a_clear_error(tmp_path, monkeypatch):
     profile = tmp_path / "firefox"
     profile.mkdir()
     monkeypatch.setattr("anna.session.firefox_profile", lambda: profile)
-    with pytest.raises(AnnaError, match="Finish the browser check"):
+    with pytest.raises(AnnaError, match="session database"):
         import_firefox(DEFAULT_MIRRORS[0], "Test")
 
 
@@ -159,3 +159,32 @@ def test_corrupt_session_metadata_is_ignored():
     metadata.write_text("null")
     jar, agent = load_session(DEFAULT_MIRRORS[0])
     assert list(jar) == [] and agent is None
+
+
+@pytest.mark.parametrize("wal", [False, True])
+def test_live_firefox_lock_imports_only_site_and_committed_wal(tmp_path, monkeypatch, wal):
+    profile = tmp_path / "live-firefox"
+    profile.mkdir()
+    with sqlite3.connect(profile / "cookies.sqlite") as browser:
+        browser.execute("PRAGMA locking_mode=EXCLUSIVE")
+        if wal:
+            browser.execute("PRAGMA journal_mode=WAL")
+        browser.execute(
+            "CREATE TABLE moz_cookies "
+            "(name,value,host,path,expiry,isSecure,isHttpOnly,originAttributes)"
+        )
+        browser.commit()
+        browser.execute(
+            "INSERT INTO moz_cookies VALUES (?,?,?,?,?,?,?,?)",
+            ("clearance", "test", ".annas-archive.gd", "/", int(time.time()) + 3600, 1, 1, ""),
+        )
+        browser.execute(
+            "INSERT INTO moz_cookies VALUES (?,?,?,?,?,?,?,?)",
+            ("unrelated", "never-import", "unrelated.example", "/", 0, 1, 1, ""),
+        )
+        browser.commit()
+        monkeypatch.setattr("anna.session.firefox_profile", lambda: profile)
+        monkeypatch.setattr("anna.session.firefox_agent", lambda: "Firefox/test")
+        assert import_firefox(DEFAULT_MIRRORS[0]) == "Firefox/test"
+        jar, _ = load_session(DEFAULT_MIRRORS[0])
+        assert [(c.name, c.value) for c in jar] == [("clearance", "test")]
