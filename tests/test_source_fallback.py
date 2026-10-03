@@ -269,3 +269,61 @@ def test_exhausted_queue_tries_another_source_without_waiting(tmp_path):
     with Client(BASE, transport=httpx.MockTransport(handler)) as client:
         result = download_record(client, book, directory=tmp_path, max_wait=0)
     assert result["md5"] == MD5
+
+
+def test_failed_network_attempts_share_budget_and_do_not_walk_all_routes(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr("anna.client.time.monotonic", lambda: clock[0])
+
+    class Backend:
+        calls = 0
+
+        def download(self, *args, **kwargs):
+            self.calls += 1
+            clock[0] += 30
+            raise httpx.ReadTimeout("no file headers")
+
+    backend = Backend()
+    with pytest.raises(DownloadSourcesError, match="stopped after 3 of 16 listed routes"):
+        download_record(backend, record(16))
+    assert backend.calls == 3
+
+
+def test_queue_time_does_not_consume_network_retry_budget(monkeypatch, tmp_path):
+    clock = [0.0]
+    monkeypatch.setattr("anna.client.time.monotonic", lambda: clock[0])
+
+    class Backend:
+        calls = 0
+
+        def download(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                kwargs["wait_progress"](120)
+                clock[0] += 120
+                kwargs["wait_progress"](0)
+                clock[0] += 10
+                raise httpx.ReadTimeout("no file headers")
+            return {"md5": kwargs["expected_md5"]}
+
+    backend = Backend()
+    assert download_record(backend, record(2), retry_budget=30)["md5"] == MD5
+    assert backend.calls == 2
+
+
+def test_remaining_retry_budget_clips_next_network_timeout(monkeypatch, tmp_path):
+    clock = [0.0]
+    monkeypatch.setattr("anna.client.time.monotonic", lambda: clock[0])
+    reads = []
+
+    def handler(request):
+        reads.append(request.extensions["timeout"]["read"])
+        if len(reads) == 1:
+            clock[0] += 30
+            raise httpx.ReadTimeout("no file headers", request=request)
+        return httpx.Response(200, content=DATA)
+
+    with Client(BASE, timeout=30, transport=httpx.MockTransport(handler)) as client:
+        result = download_record(client, record(2), directory=tmp_path, retry_budget=35)
+    assert reads == [30, 5]
+    assert result["md5"] == MD5

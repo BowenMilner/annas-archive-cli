@@ -165,6 +165,12 @@ listed Libgen file source when available, followed by free partner sources.
 Without an explicit `--source`, up to sixteen listed free HTTP sources are tried
 after connection failures, access errors, over-budget queues or unusable download pages. Checksum failures,
 existing files, cancellation and rate limits stop the operation.
+Listed routes can be aliases of the same file server; their number does not imply
+independent working servers. Automatic retries share a 90-second network budget,
+with each request’s timeout limited to what remains. Queue countdowns have their
+own shared budget, and a successful streaming transfer can take longer than 90 seconds.
+Explicit `--source` downloads retain the configured network timeout.
+
 Source attempts share a 300-second countdown budget; `--max-wait 0` fails
 immediately, and `--max-wait 600` permits a longer wait. Ctrl+C cancels.
 

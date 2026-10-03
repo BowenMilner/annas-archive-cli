@@ -174,3 +174,24 @@ Validation: 106 deterministic tests passed, as did Ruff and application type
 checks and wheel/source builds. The installed 0.3.0a5 session reader was exercised
 against the live running Firefox profile. Full archive-download acceptance remains
 open pending file-server availability and expiry of the rate limit.
+
+
+## Stalled route retries — 0.3.0a6
+
+The user reported the same transfer still contacting route 10/16 without receiving
+file bytes. Increasing candidate count had compounded the waiting rather than
+established a functioning download. DNS inspection showed wbsg8v.xyz resolving to
+45.3.63.28 and asuycdg6.org to 45.3.63.27, confirming that some differently labelled
+routes are aliases. This does not establish that all partner routes share a backend.
+
+Automatic failed attempts now share a 90-second network budget; request timeouts
+are capped at the remaining budget. Queue countdowns are accounted separately,
+and successful transfers are not capped to 90 seconds overall. Explicit sources
+retain their configured timeout. The UI calls these download routes and does not
+show an indeterminate transfer bar before receiving bytes. Synthetic regressions
+verify a stop after three 30-second stalls, exclusion of queue time, and clipping
+the next timeout to the remaining five seconds before checksum-verified success.
+
+109 tests passed. No further live file requests were made in this change after the
+previous observed rate limit. The exact archive download remains unresolved;
+these changes address accumulated waiting rather than server availability.
