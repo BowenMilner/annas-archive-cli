@@ -114,6 +114,17 @@ def prepare(ctx, json_output):
     return Client(**ctx.obj["client_options"])
 
 
+@main.command()
+@click.pass_context
+def connect(ctx):
+    """Open guided browser verification and remember this site's session."""
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise click.UsageError("Browser setup needs a terminal. Run anna connect interactively.")
+    from anna.tui import AnnaApp
+
+    AnnaApp(ctx.obj["client_options"], ctx.obj["preferences"], connect_only=True).run()
+
+
 def emit(value):
     click.echo(json.dumps(value, ensure_ascii=False, indent=2))
 

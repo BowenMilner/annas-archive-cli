@@ -34,6 +34,9 @@ class Book:
     cover_url: str = ""
     description: str = ""
     links: list[Link] = field(default_factory=list)
+    source: str = "anna"
+    source_id: str = ""
+    downloads: int | None = None
 
 
 def record_id(value: str) -> str:
@@ -70,11 +73,10 @@ def document(html: str) -> BeautifulSoup:
     )
     if challenge:
         raise ChallengeError(
-            "Browser verification required. Open this mirror in your browser, "
-            "complete verification, "
-            "then export Netscape Cookies and use --cookies. "
-            "Cookies may be bound to IP/User-Agent. "
-            "You can also change --base-url. This CLI does not execute verification scripts."
+            "Browser check required. In the book browser, press F2 for guided setup; "
+            "or run anna connect. Finish the check in Firefox, then reuse its session. "
+            "Saved sessions are remembered until they expire or the site requires a new check. "
+            "Advanced: --cookies and --user-agent remain available."
         )
     if any(s in html.lower() for s in ("this domain may be for sale", "forsale.min.js")):
         raise ParseError("Parked domain; set --base-url to a verified Anna's Archive mirror.")

@@ -26,6 +26,7 @@ from anna.errors import (
     RateLimitError,
 )
 from anna.parsing import Book, document, parse_info, parse_search, record_id, text
+from anna.session import load_session, preferred_origin, remember_origin, save_session
 
 DEFAULT_BASE_URL = "https://annas-archive.gd"
 DEFAULT_MIRRORS = (DEFAULT_BASE_URL, "https://annas-archive.gl")
@@ -79,6 +80,7 @@ def download_record(
     if not candidates:
         raise AnnaError("No free HTTP download source; try another edition.")
     failures = []
+    challenged_origin = None
     started = time.monotonic()
     max_wait = options.get("max_wait", 300)
     if max_wait < 0:
@@ -106,11 +108,16 @@ def download_record(
                     pass
             reason = "timed out" if isinstance(exc, httpx.TimeoutException) else "was unavailable"
             failures.append(f"Source {index} {reason} ({host})")
-    raise DownloadSourcesError(
+            if isinstance(exc, ChallengeError):
+                parsed = urlsplit(link.url)
+                challenged_origin = exc.origin or f"{parsed.scheme}://{parsed.netloc}"
+    error = DownloadSourcesError(
         "No free source completed the download. "
         + "; ".join(failures)
         + ". Try again later or choose another edition."
     )
+    error.origin = challenged_origin
+    raise error
 
 
 def http_url(value: str) -> str:
@@ -168,7 +175,12 @@ def check_status(response: httpx.Response) -> None:
 
 
 def download_link(html: str, base_url: str) -> str:
-    soup = document(html)
+    try:
+        soup = document(html)
+    except ChallengeError as exc:
+        parsed = urlsplit(base_url)
+        exc.origin = f"{parsed.scheme}://{parsed.netloc}"
+        raise
     countdown = soup.select_one(".js-partner-countdown")
     if countdown is not None:
         value = text(countdown)
@@ -225,11 +237,23 @@ class Client:
         transport: httpx.BaseTransport | None = None,
     ):
         self.mirrors = (base_url,) if base_url else DEFAULT_MIRRORS
-        self.base_url = http_url(self.mirrors[0]).rstrip("/")
+        preferred = preferred_origin(self.mirrors) if base_url is None else None
+        self.base_url = http_url(preferred or self.mirrors[0]).rstrip("/")
+        self._catalogue_success = False
+        self._explicit_cookies = cookies is not None
+        self._default_agent = user_agent
+        self._session_origins: dict[str, str] = {}
         parsed = urlsplit(self.base_url)
         if parsed.path or parsed.query or parsed.fragment:
             raise AnnaError("--base-url requires an origin URL, e.g. https://annas-archive.gl.")
         jar = http.cookiejar.MozillaCookieJar()
+        if not cookies:
+            for mirror in self.mirrors:
+                saved, agent = load_session(mirror)
+                for cookie in saved:
+                    jar.set_cookie(cookie)
+                if agent and mirror == self.base_url and user_agent == DEFAULT_USER_AGENT:
+                    user_agent = agent
         if cookies:
             try:
                 jar.load(str(cookies), ignore_discard=True, ignore_expires=True)
@@ -257,42 +281,81 @@ class Client:
         return self
 
     def __exit__(self, *_):
+        try:
+            for origin, agent in self._session_origins.items():
+                save_session(origin, self.http.cookies.jar, agent)
+            if self._catalogue_success:
+                remember_origin(self.base_url)
+        except OSError:
+            pass  # Optional session caching must not change a completed transfer's outcome.
         self.http.close()
 
+    def activate_session(self, url):
+        parsed = urlsplit(url)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        agent = self._default_agent
+        if origin in self._session_origins:
+            agent = self._session_origins[origin]
+        elif not self._explicit_cookies:
+            jar, saved_agent = load_session(origin)
+            for cookie in jar:
+                self.http.cookies.jar.set_cookie(cookie)
+            if saved_agent and agent == DEFAULT_USER_AGENT:
+                agent = saved_agent
+        self.http.headers["User-Agent"] = agent
+        self._session_origins[origin] = agent
+
     def page(self, path: str, params: dict | None = None) -> httpx.Response:
+        self.activate_session(self.base_url)
         response = self.http.get(self.base_url + path, params=params)
         try:
             check_status(response)
-            document(response.text)
+            try:
+                document(response.text)
+            except ChallengeError as exc:
+                exc.origin = self.base_url
+                raise
         except ChallengeError:
             # The current public site accepts an equivalent percent-encoded check
             # value. Retry once in this session; this is not a JS solver.
             url = httpx.URL(self.base_url + path, params=params)
             query = url.query + (b"&" if url.query else b"") + b"check=%31"
             response = self.http.get(url.copy_with(query=query))
-            check_status(response)
-            document(response.text)
+            try:
+                check_status(response)
+                document(response.text)
+            except ChallengeError as exc:
+                exc.origin = self.base_url
+                raise
         return response
 
     def parsed_page(self, path, params, parser):
         failures = []
+        challenged_origin = None
         mirrors = (self.base_url,) + tuple(m for m in self.mirrors if m != self.base_url)
         for mirror in mirrors:
             self.base_url = mirror.rstrip("/")
             try:
                 response = self.page(path, params)
-                return parser(response.text, str(response.url))
+                result = parser(response.text, str(response.url))
+                self._catalogue_success = True
+                return result
             except RateLimitError:
                 raise  # Respect rate limits rather than routing round them.
             except (ChallengeError, HTTPStatusError, ParseError, httpx.TransportError) as exc:
                 if len(mirrors) == 1:
                     raise
                 failures.append(type(exc).__name__)
-        raise AnnaError(
+                if isinstance(exc, ChallengeError):
+                    challenged_origin = getattr(exc, "origin", mirror)
+        error = (ChallengeError if challenged_origin else AnnaError)(
             "No working mirror found (" + ", ".join(failures) + "). "
             "Try again later, check your connection, or use anna --base-url URL doctor. "
             "Run anna --help for advanced connection options."
         )
+        if challenged_origin:
+            error.origin = challenged_origin
+        raise error
 
     def search(self, query: str, **filters) -> list[Book]:
         if not query.strip():
@@ -303,6 +366,24 @@ class Client:
     def info(self, value: str) -> Book:
         md5 = record_id(value)
         return self.parsed_page(f"/md5/{md5}", None, lambda html, url: parse_info(html, url, md5))
+
+    def statistics(self, md5: str) -> dict[str, int]:
+        """Optional edition statistics; callers must not depend on their availability."""
+        response = self.http.get(
+            self.base_url + "/dyn/md5/inline_info/" + record_id(md5),
+            headers={"Accept": "text/css"},
+        )
+        check_status(response)
+        values = response.json()
+        if not isinstance(values, dict):
+            return {}
+        return {
+            key: value
+            for key, value in values.items()
+            if key in {"downloads_total", "lists_count", "reports_count", "great_quality_count"}
+            and type(value) is int
+            and value >= 0
+        }
 
     def download(
         self,
@@ -316,6 +397,7 @@ class Client:
         cancelled: Callable[[], bool] | None = None,
         total_progress: Callable[[int | None], None] | None = None,
         request_progress: Callable[[str], None] | None = None,
+        file_validator: Callable[[Path], None] | None = None,
     ) -> dict:
         if max_wait < 0:
             raise InvalidInputError("--max-wait cannot be negative.")
@@ -339,6 +421,7 @@ class Client:
                     cancelled,
                     total_progress,
                     request_progress,
+                    file_validator,
                 )
             except ChallengeError:
                 if not same_mirror_slow or not parsed.raw_path.startswith(b"/slow_download/"):
@@ -374,6 +457,7 @@ class Client:
         cancelled: Callable[[], bool] | None = None,
         total_progress: Callable[[int | None], None] | None = None,
         request_progress: Callable[[str], None] | None = None,
+        file_validator: Callable[[Path], None] | None = None,
     ) -> dict:
         if expected_md5:
             expected_md5 = record_id(expected_md5)
@@ -386,6 +470,7 @@ class Client:
                     if urlsplit(url).hostname == urlsplit(self.base_url).hostname
                     else "Contacting file server…"
                 )
+            self.activate_session(url)
             with self.http.stream("GET", url) as response:
                 if response.status_code >= 400:
                     check_status(
@@ -472,6 +557,8 @@ class Client:
                     checksum = digest.hexdigest()
                     if expected_md5 and checksum != expected_md5:
                         raise IntegrityError("File MD5 verification failed; damaged file removed.")
+                    if file_validator:
+                        file_validator(Path(temporary))
                     check_cancelled(cancelled)
                     # Atomic publication with no overwrite, including concurrent invocations.
                     os.link(temporary, destination)

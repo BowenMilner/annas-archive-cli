@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0a3 — Bookfinder and browser sessions
+
+- Make Bookfinder the default: full-terminal results and an adaptive edition preview,
+  with descriptions, publisher, honest download statistics and contextual controls.
+- Add an explicit official Project Gutenberg EPUB alternative when title, author,
+  language and public-domain metadata match; verify the EPUB before publication.
+- Add F2 browser setup and `anna connect`: reuse a site-scoped default Linux Firefox
+  session or import a session file once, remembering cookies, identity and mirror.
+- Preserve existing commands, bounded recovery, cancellation, atomic no-overwrite
+  downloads and catalogue checksums.
+
+
 ## 0.3.0a2 — download recovery
 
 - Prefer the record's listed direct Libgen file source before slow partner queues.

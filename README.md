@@ -1,4 +1,4 @@
-# Anna — a terminal book browser
+# Anna — Bookfinder
 
 Run `anna` to search, browse editions and download books without copying hashes or
 choosing mirrors. This independent fork reuses the Python backend from
@@ -10,7 +10,8 @@ It stays responsive while network work runs in the background.
 
 ![Terminal book browser](docs/tui-results.svg)
 
-Preview shown with example fixture data.
+Bookfinder fills the terminal. On wider screens, highlighted editions have a live
+details pane; smaller terminals use a full-width details view.
 
 Use it only for public-domain books or files you are otherwise entitled to download.
 Catalogue metadata does **not** establish copyright status: check the specific
@@ -58,10 +59,13 @@ Author filtering recognises surname-first records such as “Austen, Jane”.
 | Tab / Shift+Tab | Move between controls |
 | / from results | Return to search |
 | Ctrl+S or Settings button | Edit saved preferences |
+| F2 | Guided browser check and saved session |
 | Escape in a dialog | Go back; cancel an active download |
 | q outside text fields / Ctrl+Q anywhere | Quit; cancel first if a download is active |
 
-The details view includes the description, file metadata and destination folder.
+The details view includes the description, publisher, file metadata and destination
+folder. Download totals, list counts and reported issues are fetched from Anna
+when available. Missing statistics are labelled unavailable, never invented.
 Choose Download to save the selected edition. Real byte progress is shown;
 a percentage appears only when the server supplies a reliable file length.
 Unknown lengths use an activity indicator rather than an invented percentage.
@@ -169,17 +173,54 @@ HTML/JSON/XML responses, length mismatches and checksum failures are rejected.
 Temporary files are removed on error or interruption. The destination filesystem
 must support hard links. There is no resume support.
 
+## Browser checks without repeated exports
+
+If a site asks for verification, press **F2**, choose **Open Firefox**, finish its
+check in Firefox, then return and choose **Use Firefox session**. Anna saves only
+that site's cookies and matching browser identity, then retries your last action.
+You can also start this setup directly:
+
+```sh
+anna connect
+```
+
+Automatic import currently supports the default Linux Firefox profile, outside
+private windows and containers. Another browser, a customised User-Agent or a
+non-standard profile can use the Advanced session-file option: import a Netscape
+export once, with that browser's User-Agent. Subsequent launches reuse it.
+
+Sessions live separately under the config folder's `sessions/` directory, with
+owner-only files. Unrelated sites' cookies are excluded. Delete that directory to
+forget saved sessions and mirror preferences. No browser passwords are read.
+The website can require another check after expiry, network/IP changes or changed
+browser settings; Anna cannot guarantee permanent clearance or solve the check.
+
+## Official public-domain alternatives
+
+For matching English EPUB titles and authors, Bookfinder checks Project Gutenberg
+for an official public-domain record and its advertised illustrated EPUB. Choose
+**Download official Gutenberg edition** to download that separately labelled
+edition, including after archive sources fail. It is never selected silently.
+
+Gutenberg's download count is labelled **last 30 days**; Anna's count belongs to
+the selected Anna record. The official EPUB is checked for length, EPUB mimetype
+and archive integrity before saving as `gutenberg-<id>-illustrated.epub`. It has
+its own identity and is not compared with a different Anna edition's MD5.
+Official public-domain metadata refers to the USA; check your jurisdiction and
+the specific edition. Availability and matching are not guaranteed.
+
 ## Advanced connection options
 
-By default, Anna tries `.gd` first and falls back to `.gl` for connection failures,
+By default, Anna tries the last successful mirror, or `.gd` first and falls back to `.gl` for connection failures,
 blocked pages, HTTP errors or unrecognised layouts. If `.gl` is tried first and
 blocked, automatic selection can fall back to `.gd`. A successful mirror is reused
-within that client session. An HTTP 200 parking page is not accepted as a working
+across launches. An HTTP 200 parking page is not accepted as a working
 mirror. Genuine empty results do not trigger fallback.
 
 A rate limit stops the request and asks you to try later. The CLI does not route
 round it. Mirror availability changes; deterministic tests are independent of live
-availability. No automatic mirror health is persisted between commands.
+availability. A successful mirror is remembered; saved sessions stay scoped to
+their original site.
 
 Pin a verified mirror only when needed:
 

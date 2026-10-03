@@ -108,3 +108,23 @@ The failure remains a source-availability limitation, not an established file-si
 limit. The automatic three-source fallback does not establish that every listed
 source is unavailable. A direct official-source alternative must identify its
 edition explicitly rather than silently substituting a different checksum.
+
+## Bookfinder and official edition — 3 October 2026
+
+Version 0.3.0a3's real Textual application completed search, highlight, official
+edition selection and a large EPUB transfer using live network requests. Search
+`"Pride and Prejudice" "Gutenberg"`, author `Jane Austen`, English EPUB returned
+24.8 MB catalogue record `fb73d4fd19b0da98923365cb85a03a2b`. Its preview discovered
+Project Gutenberg record 1342 by matching the official title, author, language
+and public-domain metadata. The deliberately selected official alternative saved
+24,848,783 bytes with MD5 `68ce39fde86db21b727fa9eb35d6b7cc`; EPUB mimetype and
+all ZIP entry CRC checks passed. This is a separate official illustrated edition,
+not a successful transfer of that Anna catalogue MD5. The original partner
+servers may still time out or require verification.
+
+Deterministic tests cover explicit selection after archive source failure,
+invalid-EPUB rejection, full-screen layout and resizing during a details view,
+Firefox import restricted to one site's cookies, saved-session reuse across new
+clients, per-source browser identity and setup retry. Browser session tests use
+synthetic cookies; no live human verification or universal CAPTCHA clearance is
+claimed. Checks may recur after expiry or a changed network/browser identity.

@@ -1,4 +1,5 @@
 class AnnaError(Exception):
+    origin: str | None = None
     """An actionable error safe to display without a traceback."""
 
     code = "operation_failed"
