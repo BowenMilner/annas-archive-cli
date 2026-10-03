@@ -47,6 +47,7 @@ def download_record(
     *,
     source: int | None = None,
     source_progress: Callable[[int, int], None] | None = None,
+    retry_budget: float = 90,
     **options,
 ) -> dict:
     """Try up to sixteen listed free sources, keeping the selected record checksum."""
@@ -79,6 +80,9 @@ def download_record(
         candidates = candidates[:16]
     if not candidates:
         raise AnnaError("No free HTTP download source; try another edition.")
+    if retry_budget <= 0:
+        raise InvalidInputError("Download retry budget must be positive.")
+    network_spent = 0.0
     failures = []
     challenged_origin = None
     started = time.monotonic()
@@ -90,10 +94,31 @@ def download_record(
         if source_progress:
             source_progress(index, len(candidates))
         check_cancelled(options.get("cancelled"))
+        remaining = retry_budget - network_spent
+        if remaining <= 0:
+            break
+        attempt_started = time.monotonic()
+        queue_started = None
+        queue_spent = 0.0
+        original_wait = options.get("wait_progress")
+
+        def report_wait(seconds):
+            nonlocal queue_started, queue_spent
+            if seconds and queue_started is None:
+                queue_started = time.monotonic()
+            elif not seconds and queue_started is not None:
+                queue_spent += time.monotonic() - queue_started
+                queue_started = None
+            if original_wait:
+                original_wait(seconds)
+
         attempt_options = {
             **options,
             "max_wait": max(0, int(max_wait - (time.monotonic() - started))),
+            "wait_progress": report_wait,
         }
+        if isinstance(client, Client) and source is None:
+            attempt_options["contact_deadline"] = time.monotonic() + remaining
         try:
             return client.download(link.url, expected_md5=book.md5, **attempt_options)
         except (
@@ -104,6 +129,7 @@ def download_record(
             DownloadWaitError,
         ) as exc:
             check_cancelled(options.get("cancelled"))
+            network_spent += max(0, time.monotonic() - attempt_started - queue_spent)
             if source is not None:
                 raise  # An explicit source must remain pinned.
             host = urlsplit(link.url).hostname or "the source"
@@ -125,8 +151,14 @@ def download_record(
             if isinstance(exc, ChallengeError):
                 parsed = urlsplit(link.url)
                 challenged_origin = exc.origin or f"{parsed.scheme}://{parsed.netloc}"
+    budget_exhausted = network_spent >= retry_budget
     error = DownloadSourcesError(
-        "No free source completed the download. "
+        (
+            f"File-server retry budget exhausted; stopped after {len(failures)} "
+            f"of {len(candidates)} listed routes. No book was saved. "
+            if budget_exhausted
+            else "No free source completed the download. "
+        )
         + "; ".join(failures)
         + ". Try again later or choose another edition."
     )
@@ -412,6 +444,7 @@ class Client:
         total_progress: Callable[[int | None], None] | None = None,
         request_progress: Callable[[str], None] | None = None,
         file_validator: Callable[[Path], None] | None = None,
+        contact_deadline: float | None = None,
     ) -> dict:
         if max_wait < 0:
             raise InvalidInputError("--max-wait cannot be negative.")
@@ -436,6 +469,7 @@ class Client:
                     total_progress,
                     request_progress,
                     file_validator,
+                    contact_deadline,
                 )
             except ChallengeError:
                 if not same_mirror_slow or not parsed.raw_path.startswith(b"/slow_download/"):
@@ -449,6 +483,8 @@ class Client:
                 delay = exc.seconds + 1
                 if not same_mirror_slow or delay > deadline - time.monotonic():
                     raise
+                if contact_deadline is not None:
+                    contact_deadline += delay
                 wait_until = time.monotonic() + delay
                 remaining = delay
                 while remaining > 0:
@@ -472,6 +508,7 @@ class Client:
         total_progress: Callable[[int | None], None] | None = None,
         request_progress: Callable[[str], None] | None = None,
         file_validator: Callable[[Path], None] | None = None,
+        contact_deadline: float | None = None,
     ) -> dict:
         if expected_md5:
             expected_md5 = record_id(expected_md5)
@@ -485,7 +522,21 @@ class Client:
                     else "Contacting file server…"
                 )
             self.activate_session(url)
-            with self.http.stream("GET", url) as response:
+            request_options = {}
+            if contact_deadline is not None:
+                remaining = contact_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise httpx.ReadTimeout(
+                        "File-server retry budget exhausted", request=httpx.Request("GET", url)
+                    )
+                configured = self.http.timeout
+                request_options["timeout"] = httpx.Timeout(
+                    **{
+                        name: min(value, remaining) if value is not None else remaining
+                        for name, value in configured.as_dict().items()
+                    }
+                )
+            with self.http.stream("GET", url, **request_options) as response:
                 if response.status_code >= 400:
                     check_status(
                         httpx.Response(

@@ -502,6 +502,7 @@ class DownloadScreen(ResponsiveScreen):
         self.last_update = 0.0
         self.total = None
         self.query_one("#progress", ProgressBar).update(total=None, progress=0)
+        self.query_one("#progress", ProgressBar).display = False
         self.show_request("Requesting download link…")
 
     def show_request(self, phase):
@@ -510,7 +511,7 @@ class DownloadScreen(ResponsiveScreen):
                 (
                     "Project Gutenberg · "
                     if self.book.source == "gutenberg"
-                    else f"Free source {self.source_index}/{self.source_count} · "
+                    else f"Download route {self.source_index}/{self.source_count} · "
                 )
                 + phase
             )
@@ -522,6 +523,7 @@ class DownloadScreen(ResponsiveScreen):
     def show_progress(self, size):
         if self.cancel_event.is_set():
             return
+        self.query_one("#progress", ProgressBar).display = True
         self.query_one("#progress", ProgressBar).update(progress=size)
         amount = f"{size / 1048576:.2f} MiB"
         if self.total:
@@ -531,7 +533,7 @@ class DownloadScreen(ResponsiveScreen):
     def show_wait(self, seconds):
         if not self.cancel_event.is_set():
             self.query_one("#download-status", Label).update(
-                f"Free source {self.source_index}/{self.source_count} · {seconds}s remaining"
+                f"Download route {self.source_index}/{self.source_count} · {seconds}s remaining"
                 if seconds
                 else "Countdown complete · requesting download link…"
             )

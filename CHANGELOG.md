@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0a6 — bound stalled download retries
+
+- Give automatic source retries a shared 90-second network budget and cap each
+  request's timeout at the remaining budget; exclude advertised queue countdowns.
+- Stop with an explicit attempted-route count when that budget is exhausted.
+- Call the numbered options download routes rather than implying independent servers.
+- Show the transfer bar only after receiving file bytes.
+- The reported 24.8 MB archive download remains unverified: its exact file link
+  returned HTTP 504 in verified Firefox. This release does not claim to repair
+  remote file-server availability.
+
 ## 0.3.0a5 — Firefox session import and archive source recovery
 
 - Read site-scoped cookies even when running Firefox exclusively locks its database,
