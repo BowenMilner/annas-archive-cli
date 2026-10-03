@@ -304,3 +304,88 @@ def test_tui_falls_back_and_resets_partial_byte_progress(tmp_path):
             )
 
     asyncio.run(scenario())
+
+
+def test_bookfinder_fills_terminal_and_adapts_while_dialog_open(tmp_path):
+    async def scenario():
+        app = make_app(tmp_path)
+        async with app.run_test(size=(144, 40)) as pilot:
+            assert app.query_one("#browser").region.width == 144
+            assert app.query_one("#preview").display
+            await pilot.press(*"Austen", "enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.3)
+            await app.workers.wait_for_complete()
+            assert "Pride and Prejudice" in str(app.query_one("#book-title", Label).render())
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.resize_terminal(60, 24)
+            await pilot.press("escape")
+            assert app.screen.has_class("compact")
+            assert not app.query_one("#preview").display
+            assert app.query_one("#browser").region.width == 60
+
+    asyncio.run(scenario())
+
+
+def test_failed_archive_source_offers_explicit_official_download(tmp_path, monkeypatch):
+    from test_gutenberg import backend, epub, find_edition, selected
+
+    from anna.errors import DownloadSourcesError
+
+    with backend() as client:
+        official = find_edition(client, selected())
+    monkeypatch.setattr(Client, "info", lambda *_: selected())
+    monkeypatch.setattr("anna.tui.lookup_official", lambda *_: official)
+    monkeypatch.setattr(
+        "anna.tui.download_record",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            DownloadSourcesError("All archive sources timed out.")
+        ),
+    )
+
+    async def scenario():
+        app = AnnaApp(
+            preferences={"language": "en", "format": "epub", "directory": str(tmp_path)},
+            client_factory=lambda **_: backend(),
+        )
+        async with app.run_test(size=(100, 36)) as pilot:
+            app.push_screen(DownloadScreen(selected(), {}, tmp_path, app.client_factory))
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, DownloadScreen)
+            assert not screen.running
+            assert screen.query_one("#official-download", Button).display
+            assert not list(tmp_path.iterdir())  # Finding an alternative does not download it.
+            await pilot.click("#official-download")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert len(app.screen_stack) == 2
+            assert (tmp_path / "gutenberg-1342-illustrated.epub").read_bytes() == epub()
+            assert "integrity checked" in str(screen.query_one("#download-status", Label).render())
+
+    asyncio.run(scenario())
+
+
+def test_browser_check_saves_session_then_retries_search(tmp_path, monkeypatch):
+    from anna.tui import BrowserCheckScreen
+
+    monkeypatch.setattr("anna.tui.import_firefox", lambda *_: "Firefox test agent")
+    monkeypatch.setattr("anna.tui.remember_origin", lambda *_: None)
+
+    async def scenario():
+        app = make_app(tmp_path)
+        async with app.run_test(size=(100, 36)) as pilot:
+            app.query_one("#query", Input).value = "Austen"
+            await pilot.press("f2")
+            assert isinstance(app.screen, BrowserCheckScreen)
+            await pilot.click("#reuse-browser")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert len(app.screen_stack) == 1
+            assert app.client_options["user_agent"] == "Firefox test agent"
+            assert len(app.books) == 1
+
+    asyncio.run(scenario())
