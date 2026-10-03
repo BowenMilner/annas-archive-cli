@@ -221,3 +221,26 @@ in its accessible page state, and no exact-file transfer was established. The
 user's VPN connection was left unchanged. An independent real HTTP archive source
 for catalogue MD5 51d2b22ca12a8b470b51f543298b34c9 again downloaded 277,900 bytes and
 passed that catalogue checksum; this is a diagnostic control, not the user's file.
+
+
+## Browser-session reuse diagnosis — 0.3.0a8
+
+With the user's approval, a brief comparison switched the active encrypted Proton
+connection from AU#326 to AU#320, then restored AU#326 and the original settings.
+On AU#320, Firefox completed the partner-page browser check, while a new HTTP
+request using the imported site cookies and Firefox identity still returned a
+403 verification page. This shows cookie replay is insufficient in that observed
+case; it does not establish whether the cause is a client fingerprint, additional
+browser state or a different protection rule. No exact-file transfer was obtained.
+The browser itself still needs a fresh exact-file check; the user deferred further
+computer use until tomorrow. No peer connections were started.
+
+The client previously cached cookies after every attempted origin, including
+failed verification. Synthetic tests reproduce replacement of an imported good
+cookie by a blocked response; the saved session now remains unchanged. Guided
+setup verifies the exact page before reporting success and does not retry if it
+remains blocked. Remaining slow routes behind that same blocked origin are
+skipped, preserving independent HTTP alternatives for the exact catalogue MD5.
+
+117 deterministic tests, Ruff and application type checks passed. These are
+session-recovery and retry fixes, not acceptance of the user's 24.8 MB download.

@@ -84,7 +84,7 @@ class BrowserCheckScreen(ResponsiveScreen):
             yield Label(
                 "1. Open Firefox and finish the site's check there.\n"
                 "2. Come back and choose Use Firefox session.\n"
-                "3. Anna saves this site's session and retries your last action."
+                "3. Anna checks the session, then retries your last action if it works."
             )
             yield Label(
                 "Only this site's cookies are imported into a private local file. "
@@ -147,9 +147,23 @@ class BrowserCheckScreen(ResponsiveScreen):
                     raise AnnaError("Choose a session file and enter that browser's User-Agent.")
                 import_file(self.origin, Path(path).expanduser(), agent)
             if not worker.is_cancelled:
+                self.app.call_from_thread(
+                    self.connection_error, "Checking whether Anna can reuse this session…"
+                )
+                with Client(self.origin, timeout=15, user_agent=agent) as client:
+                    try:
+                        client.verify_session(self.target_url)
+                    except ChallengeError as exc:
+                        raise AnnaError(
+                            "The site still blocks Anna with this browser session. "
+                            "If this exact page works in Firefox, repeating the check or "
+                            "import will not necessarily help. You can download in Firefox; "
+                            "Anna has not retried the blocked download."
+                        ) from exc
+            if not worker.is_cancelled:
                 remember_origin(self.origin)
                 self.app.call_from_thread(self.dismiss, {"cookies": None, "user_agent": agent})
-        except (AnnaError, OSError, subprocess.SubprocessError) as exc:
+        except (AnnaError, OSError, subprocess.SubprocessError, httpx.HTTPError) as exc:
             if not worker.is_cancelled:
                 self.app.call_from_thread(self.connection_error, error_message(exc))
 

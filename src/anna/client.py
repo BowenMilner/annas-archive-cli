@@ -86,11 +86,18 @@ def download_record(
     failures = []
     challenged_origin = None
     challenged_url = None
+    blocked_origins = set()
+    skipped_checks = 0
     started = time.monotonic()
     max_wait = options.get("max_wait", 300)
     if max_wait < 0:
         raise InvalidInputError("--max-wait cannot be negative.")
     for index, link in enumerate(candidates, 1):
+        parsed_link = urlsplit(link.url)
+        link_origin = f"{parsed_link.scheme}://{parsed_link.netloc}"
+        if link.kind == "slow" and link_origin in blocked_origins:
+            skipped_checks += 1
+            continue
         check_cancelled(options.get("cancelled"))
         if source_progress:
             source_progress(index, len(candidates))
@@ -153,6 +160,8 @@ def download_record(
                 parsed = urlsplit(link.url)
                 challenged_origin = exc.origin or f"{parsed.scheme}://{parsed.netloc}"
                 challenged_url = exc.verification_url or link.url
+                if challenged_origin == link_origin and link.kind == "slow":
+                    blocked_origins.add(challenged_origin)
     budget_exhausted = network_spent >= retry_budget
     error = DownloadSourcesError(
         (
@@ -162,6 +171,11 @@ def download_record(
             else "No free source completed the download. "
         )
         + "; ".join(failures)
+        + (
+            f". Skipped {skipped_checks} routes behind the same browser check"
+            if skipped_checks
+            else ""
+        )
         + ". Try again later or choose another edition."
     )
     error.origin = challenged_origin
@@ -292,6 +306,7 @@ class Client:
         self._explicit_cookies = cookies is not None
         self._default_agent = user_agent
         self._session_origins: dict[str, str] = {}
+        self._verified_session_origins: set[str] = set()
         parsed = urlsplit(self.base_url)
         if parsed.path or parsed.query or parsed.fragment:
             raise AnnaError("--base-url requires an origin URL, e.g. https://annas-archive.gl.")
@@ -332,7 +347,8 @@ class Client:
     def __exit__(self, *_):
         try:
             for origin, agent in self._session_origins.items():
-                save_session(origin, self.http.cookies.jar, agent)
+                if origin in self._verified_session_origins:
+                    save_session(origin, self.http.cookies.jar, agent)
             if self._catalogue_success:
                 remember_origin(self.base_url)
         except OSError:
@@ -352,6 +368,27 @@ class Client:
         self.http.headers["User-Agent"] = agent
         self._session_origins[origin] = agent
 
+    def _verified_session(self, url: str) -> None:
+        target = urlsplit(url)
+        self._verified_session_origins.add(f"{target.scheme}://{target.netloc}")
+
+    def verify_session(self, url: str) -> None:
+        """Check an imported session on its exact page, without downloading a file."""
+        target, base = urlsplit(http_url(url)), urlsplit(self.base_url)
+        if (target.scheme, target.netloc) != (base.scheme, base.netloc):
+            raise InvalidInputError("Session checks must stay on the selected mirror.")
+        self.activate_session(url)
+        with self.http.stream("GET", url) as response:
+            checked = httpx.Response(
+                response.status_code,
+                headers=response.headers,
+                content=self._read_page(response),
+                request=response.request,
+            )
+            check_status(checked)
+            document(checked.text)
+        self._verified_session_origins.add(self.base_url)
+
     def page(self, path: str, params: dict | None = None) -> httpx.Response:
         self.activate_session(self.base_url)
         response = self.http.get(self.base_url + path, params=params)
@@ -363,6 +400,7 @@ class Client:
                 exc.origin = self.base_url
                 raise
         except ChallengeError:
+            self._verified_session_origins.discard(self.base_url)
             # The current public site accepts an equivalent percent-encoded check
             # value. Retry once in this session; this is not a JS solver.
             url = httpx.URL(self.base_url + path, params=params)
@@ -374,6 +412,7 @@ class Client:
             except ChallengeError as exc:
                 exc.origin = self.base_url
                 raise
+        self._verified_session_origins.add(self.base_url)
         return response
 
     def parsed_page(self, path, params, parser):
@@ -476,6 +515,7 @@ class Client:
                 target = urlsplit(url)
                 exc.origin = exc.origin or f"{target.scheme}://{target.netloc}"
                 exc.verification_url = url
+                self._verified_session_origins.discard(exc.origin)
                 if not same_mirror_slow or not parsed.raw_path.startswith(b"/slow_download/"):
                     raise
                 # Keep retries on this mirror and preserve the server's signed query.
@@ -574,7 +614,15 @@ class Client:
                             raise AnnaError(
                                 "Download returned an oversized HTML page; no file was saved."
                             )
-                    url = download_link(body.decode("utf-8", errors="replace"), str(response.url))
+                    try:
+                        next_url = download_link(
+                            body.decode("utf-8", errors="replace"), str(response.url)
+                        )
+                    except DownloadWaitError:
+                        self._verified_session(str(response.url))
+                        raise
+                    self._verified_session(str(response.url))
+                    url = next_url
                     continue
                 if ("json" in content_type or prefix.startswith((b'{"', b"{\n"))) or (
                     "xml" in content_type or prefix.startswith(b"<?xml")
@@ -636,6 +684,7 @@ class Client:
                     os.link(temporary, destination)
                 finally:
                     Path(temporary).unlink(missing_ok=True)
+                self._verified_session(str(response.url))
                 return {"path": str(destination.resolve()), "bytes": size, "md5": checksum}
         raise AnnaError("Too many download landing pages; provide the final file URL.")
 

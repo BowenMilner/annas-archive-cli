@@ -185,7 +185,11 @@ must support hard links. There is no resume support.
 If a site asks for verification, press **F2**, choose **Open Firefox**, finish its
 check in Firefox, then return and choose **Use Firefox session**. For a failed
 download, Open Firefox opens the precise page that requested the check. Anna saves only
-that site's cookies and matching browser identity, then retries your last action.
+that site's cookies and matching browser identity, checks whether it can open that
+page, then retries your last action only if the check succeeds. If the website
+accepts Firefox but rejects Anna with the same cookies, setup explains this and
+does not automatically restart the blocked download. Cookie import alone is not
+proof that the site's verification can be reused outside the browser.
 Signed file links retain that browser identity when followed, without sending
 the catalogue’s cookies to another domain.
 You can also start this setup directly:
@@ -207,6 +211,9 @@ owner-only files. Unrelated sites' cookies are excluded. Delete that directory t
 forget saved sessions and mirror preferences. No browser passwords are read.
 The website can require another check after expiry, network/IP changes or changed
 browser settings; Anna cannot guarantee permanent clearance or solve the check.
+Blocked HTTP responses do not overwrite the saved browser session. Remaining slow
+routes behind the same verification block are skipped; independent HTTP sources
+for the selected edition remain eligible.
 
 ## Official public-domain alternatives
 
