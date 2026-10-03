@@ -85,6 +85,7 @@ def download_record(
     network_spent = 0.0
     failures = []
     challenged_origin = None
+    challenged_url = None
     started = time.monotonic()
     max_wait = options.get("max_wait", 300)
     if max_wait < 0:
@@ -151,6 +152,7 @@ def download_record(
             if isinstance(exc, ChallengeError):
                 parsed = urlsplit(link.url)
                 challenged_origin = exc.origin or f"{parsed.scheme}://{parsed.netloc}"
+                challenged_url = exc.verification_url or link.url
     budget_exhausted = network_spent >= retry_budget
     error = DownloadSourcesError(
         (
@@ -163,6 +165,7 @@ def download_record(
         + ". Try again later or choose another edition."
     )
     error.origin = challenged_origin
+    error.verification_url = challenged_url
     raise error
 
 
@@ -336,17 +339,15 @@ class Client:
             pass  # Optional session caching must not change a completed transfer's outcome.
         self.http.close()
 
-    def activate_session(self, url):
+    def activate_session(self, url, inherited_agent=None):
         parsed = urlsplit(url)
         origin = f"{parsed.scheme}://{parsed.netloc}"
-        agent = self._default_agent
-        if origin in self._session_origins:
-            agent = self._session_origins[origin]
-        elif not self._explicit_cookies:
+        agent = inherited_agent or self._default_agent
+        if not self._explicit_cookies:
             jar, saved_agent = load_session(origin)
             for cookie in jar:
                 self.http.cookies.jar.set_cookie(cookie)
-            if saved_agent and agent == DEFAULT_USER_AGENT:
+            if saved_agent and self._default_agent == DEFAULT_USER_AGENT:
                 agent = saved_agent
         self.http.headers["User-Agent"] = agent
         self._session_origins[origin] = agent
@@ -471,7 +472,10 @@ class Client:
                     file_validator,
                     contact_deadline,
                 )
-            except ChallengeError:
+            except ChallengeError as exc:
+                target = urlsplit(url)
+                exc.origin = exc.origin or f"{target.scheme}://{target.netloc}"
+                exc.verification_url = url
                 if not same_mirror_slow or not parsed.raw_path.startswith(b"/slow_download/"):
                     raise
                 # Keep retries on this mirror and preserve the server's signed query.
@@ -521,7 +525,10 @@ class Client:
                     if urlsplit(url).hostname == urlsplit(self.base_url).hostname
                     else "Contacting file server…"
                 )
-            self.activate_session(url)
+            # A signed file link must retain the identity used to obtain it.
+            # Cookie domains still control which cookies reach the next host.
+            inherited_agent = self.http.headers.get("User-Agent")
+            self.activate_session(url, inherited_agent=inherited_agent)
             request_timeout = self.http.timeout
             if contact_deadline is not None:
                 remaining = contact_deadline - time.monotonic()

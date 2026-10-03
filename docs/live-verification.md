@@ -195,3 +195,29 @@ the next timeout to the remaining five seconds before checksum-verified success.
 109 tests passed. No further live file requests were made in this change after the
 previous observed rate limit. The exact archive download remains unresolved;
 these changes address accumulated waiting rather than server availability.
+
+
+## HTTP-only continuation — 0.3.0a7
+
+The user declined peer-to-peer downloads. No torrent session was started and no
+peer-download backend was added to Anna. A read-only metadata inspection confirmed
+an exact preservation-torrent entry, but it was not transferred.
+
+A regression reproduced a genuine HTTP bug: the catalogue used the saved Firefox
+identity, while following its signed file link reverted to the default Chrome
+identity. The corrected client inherits the signing browser identity across that
+link; independent source sessions and explicit identity overrides still take
+precedence, and cookies remain domain-scoped. A mock server requiring the signing
+identity now delivers the checksum-verified file without receiving catalogue cookies.
+
+The guided browser setup also now retains and opens the exact challenged download
+page instead of only the mirror origin. Cross-origin targets are rejected.
+112 deterministic tests, Ruff and application type checks passed.
+
+A live retry of the exact 24.8 MB record reached browser verification with the
+correct Firefox identity on every observed request. Firefox itself remained at
+Checking your browser before accessing annas-archive.gd; no checkbox was observed
+in its accessible page state, and no exact-file transfer was established. The
+user's VPN connection was left unchanged. An independent real HTTP archive source
+for catalogue MD5 51d2b22ca12a8b470b51f543298b34c9 again downloaded 277,900 bytes and
+passed that catalogue checksum; this is a diagnostic control, not the user's file.

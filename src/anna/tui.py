@@ -7,6 +7,7 @@ import time
 import webbrowser
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from rich.text import Text
@@ -67,9 +68,14 @@ class ResponsiveScreen(ModalScreen):
 class BrowserCheckScreen(ResponsiveScreen):
     BINDINGS = [("escape", "dismiss", "Back")]
 
-    def __init__(self, origin):
+    def __init__(self, origin, target_url=None):
         super().__init__()
         self.origin = origin
+        self.target_url = origin
+        if target_url:
+            base, target = urlsplit(origin), urlsplit(target_url)
+            if (target.scheme, target.netloc) == (base.scheme, base.netloc):
+                self.target_url = target_url
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog"):
@@ -107,10 +113,10 @@ class BrowserCheckScreen(ResponsiveScreen):
         executable = shutil.which("firefox")
         if executable:
             subprocess.Popen(
-                [executable, self.origin], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                [executable, self.target_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
         else:
-            webbrowser.open(self.origin)
+            webbrowser.open(self.target_url)
         self.query_one("#connection-status", Label).update(
             "Finish the browser check, then return here. Anna will not solve it for you."
         )
@@ -551,8 +557,9 @@ class DownloadScreen(ResponsiveScreen):
         button.disabled = False
         button.focus()
 
-    def transfer_error(self, message, origin):
+    def transfer_error(self, message, origin, target_url=None):
         self.verification_origin = origin
+        self.verification_url = target_url
         self.finish(message, False)
 
     def retry_transfer(self, options):
@@ -622,6 +629,7 @@ class DownloadScreen(ResponsiveScreen):
                 self.transfer_error,
                 error_message(exc),
                 exc.origin if isinstance(exc, AnnaError) else None,
+                exc.verification_url if isinstance(exc, AnnaError) else None,
             )
             if isinstance(exc, DownloadSourcesError):
                 self.app.call_from_thread(self.discover_official)
@@ -798,7 +806,8 @@ class AnnaApp(App):
             or DEFAULT_BASE_URL
         )
         self.push_screen(
-            BrowserCheckScreen(origin), lambda result: self.session_ready(result, parent)
+            BrowserCheckScreen(origin, getattr(parent, "verification_url", None)),
+            lambda result: self.session_ready(result, parent),
         )
 
     def session_ready(self, options, parent):

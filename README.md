@@ -183,8 +183,11 @@ must support hard links. There is no resume support.
 ## Browser checks without repeated exports
 
 If a site asks for verification, press **F2**, choose **Open Firefox**, finish its
-check in Firefox, then return and choose **Use Firefox session**. Anna saves only
+check in Firefox, then return and choose **Use Firefox session**. For a failed
+download, Open Firefox opens the precise page that requested the check. Anna saves only
 that site's cookies and matching browser identity, then retries your last action.
+Signed file links retain that browser identity when followed, without sending
+the catalogue’s cookies to another domain.
 You can also start this setup directly:
 
 ```sh

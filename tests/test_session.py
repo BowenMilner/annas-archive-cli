@@ -188,3 +188,53 @@ def test_live_firefox_lock_imports_only_site_and_committed_wal(tmp_path, monkeyp
         assert import_firefox(DEFAULT_MIRRORS[0]) == "Firefox/test"
         jar, _ = load_session(DEFAULT_MIRRORS[0])
         assert [(c.name, c.value) for c in jar] == [("clearance", "test")]
+
+
+def test_signed_file_link_keeps_catalogue_browser_identity_without_cookies(tmp_path):
+    import hashlib
+
+    from anna.session import save_session
+
+    jar = httpx.Cookies()
+    jar.set("clearance", "catalogue-only", domain="annas-archive.gd", path="/")
+    save_session(DEFAULT_MIRRORS[0], jar.jar, "Firefox/catalogue")
+    payload = b"lawful exact archive file"
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        if request.url.host == "annas-archive.gd":
+            return httpx.Response(
+                200,
+                text='<a download href="https://file.example/signed/book.epub">Download</a>',
+                headers={"content-type": "text/html"},
+            )
+        if request.headers["user-agent"] != "Firefox/catalogue":
+            return httpx.Response(403)
+        return httpx.Response(200, content=payload)
+
+    with Client(transport=httpx.MockTransport(handle)) as client:
+        result = client.download(
+            DEFAULT_MIRRORS[0] + "/source",
+            directory=tmp_path,
+            expected_md5=hashlib.md5(payload).hexdigest(),
+        )
+    assert result["bytes"] == len(payload)
+    assert requests[0].headers["cookie"] == "clearance=catalogue-only"
+    assert "cookie" not in requests[1].headers
+    assert requests[1].headers["user-agent"] == "Firefox/catalogue"
+
+
+def test_download_challenge_keeps_exact_page_for_browser_setup():
+    target = DEFAULT_MIRRORS[0] + "/slow_download/" + "a" * 32 + "/0/7"
+    with Client(
+        DEFAULT_MIRRORS[0],
+        transport=httpx.MockTransport(
+            lambda r: httpx.Response(403, text="<title>DDoS-Guard</title>")
+        ),
+    ) as client:
+        with pytest.raises(ChallengeError) as error:
+            client.download(target)
+    assert error.value.origin == DEFAULT_MIRRORS[0]
+    assert error.value.verification_url.endswith("/0/7")
+    assert "/slow%5Fdownload/" in error.value.verification_url
