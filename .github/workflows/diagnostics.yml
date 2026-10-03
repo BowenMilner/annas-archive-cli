@@ -11,11 +11,20 @@ on:
         type: choice
         options: [search, download]
         default: search
+      md5:
+        description: Public-domain catalogue MD5 for an exact-record download check
+        required: true
+        default: 51d2b22ca12a8b470b51f543298b34c9
+      source:
+        description: Optional listed source number to isolate
+        required: false
+        default: ''
 permissions:
   contents: read
 jobs:
   doctor:
     runs-on: ubuntu-24.04
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
@@ -31,4 +40,12 @@ jobs:
         if: inputs.mode == 'download'
         env:
           ANNA_BASE_URL: ${{ inputs.base_url }}
-        run: uv run --frozen --no-dev python scripts/live_smoke.py --base-url "$ANNA_BASE_URL"
+          DIAGNOSTIC_MD5: ${{ inputs.md5 }}
+          DIAGNOSTIC_SOURCE: ${{ inputs.source }}
+        run: |
+          source_args=()
+          if [[ -n "$DIAGNOSTIC_SOURCE" ]]; then
+            source_args=(--source "$DIAGNOSTIC_SOURCE")
+          fi
+          uv run --frozen --no-dev python scripts/live_smoke.py --base-url "$ANNA_BASE_URL" --md5 "$DIAGNOSTIC_MD5" --record-only "${source_args[@]}"
+
