@@ -412,3 +412,31 @@ completed. The comparison reproduces the upstream 504 on the untouched original,
 not an original 30-second default ReadTimeout. It does not establish that all fork
 behaviour is equivalent or free of defects. The fork's same 504 had already been
 reproduced in the preceding long-request and independent-runner checks.
+
+## Successful-file provenance and limits of the outage inference
+
+On 4 October, the 24.8 MB EPUB currently saved in `~/Books` was rechecked:
+`gutenberg-1342-illustrated.epub`, 24,848,783 bytes, catalogue-independent MD5
+`68ce39fde86db21b727fa9eb35d6b7cc`. It matches the previously recorded direct
+Project Gutenberg transfer. This saved success does not demonstrate successful
+transfer of archive MD5 `fb73d4fd19b0da98923365cb85a03a2b`.
+
+The user confirmed that search/book pages open; a completed same-edition browser
+archive download today has not been established. A fresh, single slow-route-0
+request on `.pk` stopped at browser verification. An isolated normal headless
+Firefox process, without stealth modifications or imported cookies, also remained
+on DDoS-Guard and produced no file link. No human checks were attempted.
+
+The importer's selected Firefox profile matched the running Firefox process's
+open cookie database. A site-scoped read found eight current `.gd` cookies and no
+current `.gl` or `.pk` cookies, but did not find both `aa_ddg_check` and `__ddg5_`
+in the running profile for any of the three origins. Cookie values and JWT contents
+were not logged or modified. This is not evidence of an import-profile mismatch;
+it does not establish that a freshly verified browser session would fail.
+
+The measured HTTP 504s, including the original-client comparison, are failures of
+those tested download chains. They do not establish an outage for every user,
+every route or every collection, nor exclude all inherited request/session bugs.
+A completed human-verified same-edition browser download, followed by comparison
+of its unchanged generated file URL and browser identity, remains the appropriate
+control for distinguishing a client-specific failure from that route's availability.
