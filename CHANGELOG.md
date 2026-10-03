@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0a7 — preserve signed-link browser identity
+
+- Keep the browser identity used to obtain a signed download link when contacting
+  its file server, unless that server has its own saved session. Cookies remain
+  scoped to their own domains; explicit browser-identity overrides remain respected.
+- F2 opens the exact download page that requested verification, rather than only
+  the mirror home page. Reject cross-origin verification targets.
+- Add regressions for identity-bound file links and exact-page browser setup.
+- No peer-to-peer download support has been added. The reported 24.8 MB record's
+  HTTP transfer remains unverified while browser verification is stalled.
+
 ## 0.3.0a6 — bound stalled download retries
 
 - Give automatic source retries a shared 90-second network budget and cap each

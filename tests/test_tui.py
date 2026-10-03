@@ -449,3 +449,28 @@ def test_archive_remains_primary_when_official_alternative_exists(tmp_path, monk
             assert app.query_one("#official-download", Button).variant == "default"
 
     asyncio.run(scenario())
+
+
+def test_browser_check_opens_challenged_download_page_on_same_origin(tmp_path, monkeypatch):
+    from anna.tui import BrowserCheckScreen
+
+    target = "https://annas-archive.gd/slow_download/" + MD5 + "/0/7"
+    calls = []
+    monkeypatch.setattr("anna.tui.shutil.which", lambda _: "/usr/bin/firefox")
+    monkeypatch.setattr("anna.tui.subprocess.Popen", lambda args, **kwargs: calls.append(args))
+
+    async def scenario():
+        app = make_app(tmp_path)
+        async with app.run_test() as pilot:
+            app.push_screen(BrowserCheckScreen("https://annas-archive.gd", target))
+            await pilot.pause()
+            await pilot.click("#open-browser")
+            assert calls == [["/usr/bin/firefox", target]]
+            assert (
+                BrowserCheckScreen(
+                    "https://annas-archive.gd", "https://other.example/file"
+                ).target_url
+                == "https://annas-archive.gd"
+            )
+
+    asyncio.run(scenario())
