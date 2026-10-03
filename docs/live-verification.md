@@ -285,3 +285,9 @@ the renewed cookie and persists it. Session validation also follows the same
 bounded equivalent-route retry as downloads; rate limits remain terminal.
 The final suite has 126 tests. These fixes do not claim the stalled remote file
 has become available.
+
+The final installed 0.3.0a9 check selected `.pk`, recovered its initial verification
+response through the equivalent slow route, received HTTP 200 for the partner
+page and advanced to Contacting file server. The exact-file request then timed
+out before receiving bytes. This verifies installed page resolution with the
+complete fixes, but still does not verify the selected file transfer.
