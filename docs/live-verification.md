@@ -370,3 +370,15 @@ status announcement.
 archive file remains unavailable in these live checks and download acceptance
 remains open. Resolving that external blocker requires a working advertised HTTP
 source; passing tests, catalogue pages or a different edition cannot satisfy it.
+
+## Fresh official-domain comparison — 4 October 2026
+
+The live [official-mirror FAQ](https://annas-archive.pk/faq#official-mirrors)
+continues to list only `.gl`, `.pk` and `.gd`, matching the client's configured
+mirror set. A fresh direct request to slow route 14 for the exact selected MD5
+was made on each origin, with the existing site-scoped session and the bounded
+normal equivalent-route retry. All three ultimately returned a 403 browser check;
+none reached a file transfer in this comparison. No new official origin was found
+in the current list. This result is distinct from the earlier `.pk` page success
+followed by file-server HTTP 504: page access and file availability remain separate
+conditions, and a catalogue-mirror switch does not guarantee a different file host.
