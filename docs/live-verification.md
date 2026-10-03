@@ -326,3 +326,47 @@ The separate advertised alternate-backend route was then tested once; its partne
 page required browser verification, so no alternate file transfer was established.
 Expired previously saved URLs were inspected but not requested. No rate-limit
 response was routed around, network settings changed or desktop interaction used.
+
+## Independent-network isolation — 4 October 2026
+
+The original source URL listed on the exact record could not be reached, and a
+byte-identical MD5 lookup on the listed Library Genesis endpoint did not yield a
+file. No different edition was substituted.
+
+A previously authorised brief encrypted Australian VPN comparison matched the
+persisted connection identity against the active NetworkManager connection before
+switching. An alternate Australian exit still received an advertised link to the
+same `s` backend for slow route 14; the duplicate file request was skipped. Proton's
+local agent failed to confirm its connected state. The original AU#326 connection
+was verified active afterwards, the original runtime protection settings were
+reapplied, and the saved settings file remained byte-for-byte unchanged. No desktop
+interaction or peer connections took place.
+
+Live diagnostics now accept an exact catalogue MD5 and an optional listed source
+number. `--record-only` avoids search-ranking dependence while retaining record,
+source, CLI download, exact MD5, EPUB mimetype and ZIP CRC checks. The CI diagnostic
+allows a 180-second HTTP inactivity timeout and a bounded job lifetime. Any
+successful file is checked in a temporary directory and removed; failure is not
+converted into a passing workflow. Listed source numbers include fast links and
+therefore differ from the automatic free-route labels.
+
+Two clean GitHub-hosted runs reproduced explicit upstream timeouts:
+
+- [Exact 24.8 MB record, listed source 36 (slow route 14)](https://github.com/BowenMilner/annas-archive-cli/actions/runs/37134829200):
+  HTTP 504 from the archive download chain with a 180-second HTTP allowance.
+- [Small archive-hosted control, listed source 22 (slow route 0)](https://github.com/BowenMilner/annas-archive-cli/actions/runs/37134904076):
+  HTTP 504 with the same allowance. This deliberately exercised the partner route,
+  rather than its independently available Library Genesis source.
+
+A preceding exact-file test with a 60-second allowance returned ReadTimeout. The
+longer allowance exposed the service's HTTP 504 rather than fixing the transfer.
+This reproduces failures outside the user's host/VPN and across two catalogue
+records; it does not establish that every remote backend is down. Contemporary
+[user reports](https://www.reddit.com/r/Annas_Archive/comments/1wwemvy/error_504/)
+describe similar failures on 3 October; these are corroboration, not an operator
+status announcement.
+
+131 deterministic tests and Ruff lint/format checks pass. The exact selected
+archive file remains unavailable in these live checks and download acceptance
+remains open. Resolving that external blocker requires a working advertised HTTP
+source; passing tests, catalogue pages or a different edition cannot satisfy it.
