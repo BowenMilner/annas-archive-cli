@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0a5 — Firefox session import and archive source recovery
+
+- Read site-scoped cookies even when running Firefox exclusively locks its database,
+  including committed WAL data, using a private temporary snapshot.
+- Try up to sixteen listed free sources for the exact selected archive record;
+  continue after an over-budget queue and report HTTP failures more clearly.
+- Keep Download archive file as the primary action when an official alternative exists.
+- Add regression coverage for live database locks, later working sources and queue fallback.
+
 ## 0.3.0a4 — controls and direct preview actions
 
 - Give buttons clear outlines, centred labels and visible hover/focus states.

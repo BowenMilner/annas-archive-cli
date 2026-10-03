@@ -133,8 +133,8 @@ def test_exhaustion_bounded_and_signed_url_not_disclosed():
 
     with Client(BASE, transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(DownloadSourcesError) as error:
-            download_record(client, record(10))
-    assert len(requests) == 3
+            download_record(client, record(20))
+    assert len(requests) == 16
     assert "files.example" in str(error.value)
     assert "timed out" in str(error.value)
     assert "private-token" not in str(error.value)
@@ -236,4 +236,36 @@ def test_independent_library_source_precedes_repeated_partner_routes(tmp_path):
         result = download_record(client, book, directory=tmp_path)
     assert str(requests[0].url) == direct
     assert len(requests) == 2
+    assert result["md5"] == MD5
+
+
+def test_working_fourth_source_is_not_discarded(tmp_path):
+    attempts = []
+
+    def handler(request):
+        attempts.append(request.url.path)
+        if request.url.path != "/source/3":
+            raise httpx.ReadTimeout("offline", request=request)
+        return httpx.Response(200, content=DATA)
+
+    with Client(BASE, transport=httpx.MockTransport(handler)) as client:
+        result = download_record(client, record(4), directory=tmp_path)
+    assert result["md5"] == MD5
+    assert attempts == ["/source/0", "/source/1", "/source/2", "/source/3"]
+
+
+def test_exhausted_queue_tries_another_source_without_waiting(tmp_path):
+    def handler(request):
+        if request.url.path.endswith("/0/0"):
+            return httpx.Response(
+                200,
+                text='<span class="js-partner-countdown">600</span>',
+                headers={"content-type": "text/html"},
+            )
+        return httpx.Response(200, content=DATA)
+
+    book = record(2)
+    book.links[0].url = BASE + "/slow_download/" + MD5 + "/0/0"
+    with Client(BASE, transport=httpx.MockTransport(handler)) as client:
+        result = download_record(client, book, directory=tmp_path, max_wait=0)
     assert result["md5"] == MD5

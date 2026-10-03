@@ -161,9 +161,9 @@ saved language/format defaults and prompts in a terminal; use explicit filters a
 `--no-select` when adapting existing scripts.
 
 `--source` chooses the one-based source from `links`; otherwise download uses the
-a listed Libgen file source when available, followed by free partner sources.
-Without an explicit `--source`, up to three listed free HTTP sources are tried
-after connection failures, access errors or unusable download pages. Checksum failures,
+listed Libgen file source when available, followed by free partner sources.
+Without an explicit `--source`, up to sixteen listed free HTTP sources are tried
+after connection failures, access errors, over-budget queues or unusable download pages. Checksum failures,
 existing files, cancellation and rate limits stop the operation.
 Source attempts share a 300-second countdown budget; `--max-wait 0` fails
 immediately, and `--max-wait 600` permits a longer wait. Ctrl+C cancels.
@@ -185,6 +185,9 @@ You can also start this setup directly:
 anna connect
 ```
 
+If Firefox locks its database while running, Anna uses a private temporary snapshot
+and removes it immediately after querying this site’s cookies. You can keep Firefox open.
+
 Automatic import currently supports the default Linux Firefox profile, outside
 private windows and containers. Another browser, a customised User-Agent or a
 non-standard profile can use the Advanced session-file option: import a Netscape
@@ -201,9 +204,9 @@ browser settings; Anna cannot guarantee permanent clearance or solve the check.
 For matching English EPUB titles and authors, Bookfinder checks Project Gutenberg
 for an official public-domain record and its advertised illustrated EPUB. Choose
 **Download official EPUB** to download that separately labelled
-edition, including after archive sources fail. When available, it is the primary
-action; **Try archive sources** remains an explicit alternative. It is never
-selected silently.
+edition, including after archive sources fail. **Download archive file** remains the
+primary action and verifies the exact selected record’s MD5. The official alternative
+is never selected silently.
 
 Gutenberg's download count is labelled **last 30 days**; Anna's count belongs to
 the selected Anna record. The official EPUB is checked for length, EPUB mimetype

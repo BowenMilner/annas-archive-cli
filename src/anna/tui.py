@@ -81,7 +81,7 @@ class BrowserCheckScreen(ResponsiveScreen):
                 "3. Anna saves this site's session and retries your last action."
             )
             yield Label(
-                "Only this site's cookies are copied, into a private local file. "
+                "Only this site's cookies are imported into a private local file. "
                 "They are reused until they expire. Changing network or browser settings "
                 "can make the site ask again.",
                 classes="muted",
@@ -177,7 +177,7 @@ class EditionPane(VerticalScroll):
         yield Label("", id="book-error", classes="error")
         yield Label("", id="official-status", classes="muted")
         yield Button(
-            "Download official EPUB", id="official-download", variant="primary", disabled=True
+            "Download official EPUB", id="official-download", variant="default", disabled=True
         )
         yield Button("Download archive file", id="download-book", variant="primary", disabled=True)
         yield Label("", id="book-description")
@@ -226,8 +226,8 @@ class EditionPane(VerticalScroll):
         button.display = book is not None
         button.disabled = book is None
         archive = self.query_one("#download-book", Button)
-        archive.label = "Try archive sources" if book is not None else "Download archive file"
-        archive.variant = "default" if book is not None else "primary"
+        archive.label = "Download archive file"
+        archive.variant = "primary"
         label = self.query_one("#official-status", Label)
         if book is None:
             label.update("")
@@ -991,12 +991,7 @@ class AnnaApp(App):
             if not self.screen.has_class("compact"):
                 # The preview already contains the selected edition's details.
                 pane = self.query_one("#preview", EditionPane)
-                official = pane.query_one("#official-download", Button)
-                (
-                    official
-                    if official.display and not official.disabled
-                    else pane.query_one("#download-book", Button)
-                ).focus()
+                pane.query_one("#download-book", Button).focus()
                 return
             self.push_screen(
                 BookScreen(
