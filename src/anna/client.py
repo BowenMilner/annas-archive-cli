@@ -14,20 +14,28 @@ import httpx
 from anna.errors import (
     AnnaError,
     ChallengeError,
+    DownloadCancelledError,
     DownloadWaitError,
     FileExistsError,
     HTTPStatusError,
     IntegrityError,
     InvalidInputError,
+    ParseError,
     RateLimitError,
 )
 from anna.parsing import Book, document, parse_info, parse_search, record_id, text
 
-DEFAULT_BASE_URL = "https://annas-archive.gl"
+DEFAULT_BASE_URL = "https://annas-archive.gd"
+DEFAULT_MIRRORS = (DEFAULT_BASE_URL, "https://annas-archive.gl")
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
+
+
+def check_cancelled(cancelled):
+    if cancelled and cancelled():
+        raise DownloadCancelledError("Download cancelled; unfinished file removed.")
 
 
 def http_url(value: str) -> str:
@@ -114,13 +122,14 @@ def download_link(html: str, base_url: str) -> str:
 class Client:
     def __init__(
         self,
-        base_url: str = DEFAULT_BASE_URL,
+        base_url: str | None = None,
         timeout: float = 30,
         cookies: Path | None = None,
         user_agent: str = DEFAULT_USER_AGENT,
         transport: httpx.BaseTransport | None = None,
     ):
-        self.base_url = http_url(base_url).rstrip("/")
+        self.mirrors = (base_url,) if base_url else DEFAULT_MIRRORS
+        self.base_url = http_url(self.mirrors[0]).rstrip("/")
         parsed = urlsplit(self.base_url)
         if parsed.path or parsed.query or parsed.fragment:
             raise AnnaError("--base-url requires an origin URL, e.g. https://annas-archive.gl.")
@@ -169,17 +178,35 @@ class Client:
             document(response.text)
         return response
 
+    def parsed_page(self, path, params, parser):
+        failures = []
+        mirrors = (self.base_url,) + tuple(m for m in self.mirrors if m != self.base_url)
+        for mirror in mirrors:
+            self.base_url = mirror.rstrip("/")
+            try:
+                response = self.page(path, params)
+                return parser(response.text, str(response.url))
+            except RateLimitError:
+                raise  # Respect rate limits rather than routing round them.
+            except (ChallengeError, HTTPStatusError, ParseError, httpx.TransportError) as exc:
+                if len(mirrors) == 1:
+                    raise
+                failures.append(type(exc).__name__)
+        raise AnnaError(
+            "No working mirror found (" + ", ".join(failures) + "). "
+            "Try again later, check your connection, or use anna --base-url URL doctor. "
+            "Run anna --help for advanced connection options."
+        )
+
     def search(self, query: str, **filters) -> list[Book]:
         if not query.strip():
             raise AnnaError("Search query cannot be empty.")
         params = {"q": query, "display": "", **{k: v for k, v in filters.items() if v}}
-        response = self.page("/search", params)
-        return parse_search(response.text, str(response.url))
+        return self.parsed_page("/search", params, parse_search)
 
     def info(self, value: str) -> Book:
         md5 = record_id(value)
-        response = self.page(f"/md5/{md5}")
-        return parse_info(response.text, str(response.url), md5)
+        return self.parsed_page(f"/md5/{md5}", None, lambda html, url: parse_info(html, url, md5))
 
     def download(
         self,
@@ -190,6 +217,8 @@ class Client:
         progress: Callable[[int], None] | None = None,
         max_wait: int = 300,
         wait_progress: Callable[[int], None] | None = None,
+        cancelled: Callable[[], bool] | None = None,
+        total_progress: Callable[[int | None], None] | None = None,
     ) -> dict:
         if max_wait < 0:
             raise InvalidInputError("--max-wait cannot be negative.")
@@ -202,8 +231,11 @@ class Client:
             base.port,
         ) and bool(re.fullmatch(r"/slow_download/[0-9a-f]{32}/\d+/\d+/?", parsed.path))
         for _ in range(6):
+            check_cancelled(cancelled)
             try:
-                return self._download(url, output, directory, expected_md5, progress)
+                return self._download(
+                    url, output, directory, expected_md5, progress, cancelled, total_progress
+                )
             except ChallengeError:
                 if not same_mirror_slow or not parsed.raw_path.startswith(b"/slow_download/"):
                     raise
@@ -219,6 +251,7 @@ class Client:
                 wait_until = time.monotonic() + delay
                 remaining = delay
                 while remaining > 0:
+                    check_cancelled(cancelled)
                     if wait_progress:
                         wait_progress(remaining)
                     time.sleep(min(1, max(0, wait_until - time.monotonic())))
@@ -234,10 +267,13 @@ class Client:
         directory: Path,
         expected_md5: str | None,
         progress: Callable[[int], None] | None,
+        cancelled: Callable[[], bool] | None = None,
+        total_progress: Callable[[int | None], None] | None = None,
     ) -> dict:
         if expected_md5:
             expected_md5 = record_id(expected_md5)
         for _ in range(4):
+            check_cancelled(cancelled)
             http_url(url)
             with self.http.stream("GET", url) as response:
                 if response.status_code >= 400:
@@ -253,6 +289,7 @@ class Client:
                     raise AnnaError(
                         f"A complete file is required; server returned HTTP {response.status_code}."
                     )
+                check_cancelled(cancelled)
                 chunks = response.iter_bytes(chunk_size=65536)
                 first = next(chunks, b"")
                 content_type = response.headers.get("content-type", "").lower()
@@ -263,6 +300,7 @@ class Client:
                 if is_html:
                     body = bytearray(first)
                     for chunk in chunks:
+                        check_cancelled(cancelled)
                         body.extend(chunk)
                         if len(body) > 2_000_000:
                             raise AnnaError(
@@ -276,6 +314,15 @@ class Client:
                     raise AnnaError("Download returned JSON/XML; no ebook was saved.")
                 if not first:
                     raise AnnaError("Server returned an empty file; download cancelled.")
+                declared_total = response.headers.get("content-length", "")
+                total = (
+                    int(declared_total)
+                    if declared_total.isdigit() and not response.headers.get("content-encoding")
+                    else None
+                )
+                if total_progress:
+                    total_progress(total)
+                check_cancelled(cancelled)
                 destination = output or directory / response_filename(response)
                 if destination.exists() or destination.is_symlink():
                     raise FileExistsError(
@@ -295,6 +342,7 @@ class Client:
                         if progress:
                             progress(len(first))
                         for chunk in chunks:
+                            check_cancelled(cancelled)
                             stream.write(chunk)
                             digest.update(chunk)
                             size += len(chunk)
@@ -313,6 +361,7 @@ class Client:
                     checksum = digest.hexdigest()
                     if expected_md5 and checksum != expected_md5:
                         raise IntegrityError("File MD5 verification failed; damaged file removed.")
+                    check_cancelled(cancelled)
                     # Atomic publication with no overwrite, including concurrent invocations.
                     os.link(temporary, destination)
                 finally:

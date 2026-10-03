@@ -1,12 +1,17 @@
 [project]
 name = "annas-archive-cli"
 dynamic = ["version"]
-description = "Search Anna's Archive, inspect records, and download files from the terminal"
+description = "Browse, inspect and download books in a keyboard-driven terminal interface"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-dependencies = ["beautifulsoup4>=4.12,<5", "click>=8.1,<9", "httpx[socks]>=0.27,<1"]
+dependencies = [
+    "beautifulsoup4>=4.12,<5",
+    "click>=8.1,<9",
+    "httpx[socks]>=0.27,<1",
+    "textual>=8,<9",
+]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
@@ -19,9 +24,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/meurz/annas-archive-cli"
-Issues = "https://github.com/meurz/annas-archive-cli/issues"
-Changelog = "https://github.com/meurz/annas-archive-cli/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/BowenMilner/annas-archive-cli"
+Issues = "https://github.com/BowenMilner/annas-archive-cli/issues"
+Changelog = "https://github.com/BowenMilner/annas-archive-cli/blob/main/CHANGELOG.md"
 
 [project.scripts]
 anna = "anna.cli:main"
