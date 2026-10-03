@@ -1,85 +1,143 @@
-# Anna's Archive CLI
+# Anna — a terminal book browser
 
-[![CI](https://github.com/meurz/annas-archive-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/meurz/annas-archive-cli/actions/workflows/ci.yml)
+Run `anna` to search, browse editions and download books without copying hashes or
+choosing mirrors. This independent fork reuses the Python backend from
+[meurz/annas-archive-cli](https://github.com/meurz/annas-archive-cli), with a TUI built
+using [Textual](https://textual.textualize.io/).
 
-Search Anna's Archive, inspect book records and download files from your terminal.
-The command is `anna`. This is an independent, unofficial project.
+The interface follows a simple path: **search → results → edition details → download**.
+It stays responsive while network work runs in the background.
 
-> **Preview:** real Anna's Archive search → record → free-source download has been
-> verified with public-domain EPUBs, including catalog MD5 and EPUB integrity checks.
-> No browser, account or additional dependencies are needed for the verified routes.
-> Site protection can change; this is not a universal CAPTCHA solver.
-> See [live verification](docs/live-verification.md) for evidence and limits.
+![Terminal book browser](docs/tui-results.svg)
 
-## Run in one command
+Preview shown with example fixture data.
 
-With [uv](https://docs.astral.sh/uv/), run the pinned preview:
+Use it only for public-domain books or files you are otherwise entitled to download.
+Catalogue metadata does **not** establish copyright status: check the specific
+edition, translation, illustrations and added material before downloading.
+The CLI does not certify public-domain status.
 
-```sh
-uvx --from annas-archive-cli==0.2.0rc4 anna --help
-```
+## Install this fork
 
-No repository clone or manual virtual environment is needed. uv needs a compatible
-Python runtime and can download one when permitted. To install permanently, use
-`uv tool install annas-archive-cli==0.2.0rc4`.
-
-The identical wheel is also available directly from GitHub Releases:
+With Python 3.11+ and [uv](https://docs.astral.sh/uv/):
 
 ```sh
-uvx --from https://github.com/meurz/annas-archive-cli/releases/download/v0.2.0rc4/annas_archive_cli-0.2.0rc4-py3-none-any.whl anna --help
+git clone https://github.com/BowenMilner/annas-archive-cli.git
+cd annas-archive-cli
+git switch feat/terminal-book-browser
+uv sync --locked
+uv run anna
 ```
 
-### Without Python
-
-Standalone archives are available from [GitHub Releases](https://github.com/meurz/annas-archive-cli/releases).
-They bundle the runtime. Install the preview on Linux or macOS:
+To make `anna` available outside the checkout:
 
 ```sh
-curl -fsSL https://github.com/meurz/annas-archive-cli/releases/download/v0.2.0rc4/install.sh | ANNA_VERSION=v0.2.0rc4 sh
+uv tool install .
 ```
 
-Windows PowerShell:
+If you already installed the upstream package, use `uv tool install --reinstall .`.
+This replaces that tool installation. Upstream PyPI and standalone releases do not
+include this fork's changes. Nothing in this repository edits your shell configuration.
 
-```powershell
-$env:ANNA_VERSION='v0.2.0rc4'; & ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing https://github.com/meurz/annas-archive-cli/releases/download/v0.2.0rc4/install.ps1).Content))
+## Using the terminal browser
+
+```sh
+anna
 ```
 
-Alternatively, download and inspect the installer before running it, or extract the
-archive yourself and run `anna --help` / `anna.exe --help`. Installers verify the
-archive's SHA-256 before replacing an existing executable. Release build attestations
-can be verified with `gh attestation verify <archive> --repo meurz/annas-archive-cli`.
-The executables are not platform-signed or notarized; OS security prompts may apply.
+Enter a title, optionally enter an author, and press Enter. English and EPUB are
+selected initially. Change the format dropdown or language field before searching.
+Use `*` or a blank language for all languages, and “Any format” for all formats.
+Author filtering recognises surname-first records such as “Austen, Jane”.
 
-| Target | Build/test baseline |
+| Key / action | Behaviour |
 | --- | --- |
-| Linux x86_64 | Ubuntu 22.04, glibc 2.35+ |
-| Linux arm64 | Ubuntu 24.04, glibc 2.39+ |
-| macOS arm64 / x86_64 | macOS 15 |
-| Windows x86_64 | Windows Server 2022 runner; desktop Windows 11 not separately verified |
+| Enter in a search field | Search |
+| ↑ / ↓ in results | Move between editions |
+| Enter on a result | Open details |
+| Tab / Shift+Tab | Move between controls |
+| / from results | Return to search |
+| Ctrl+S or Settings button | Edit saved preferences |
+| Escape in a dialog | Go back; cancel an active download |
+| q outside text fields / Ctrl+Q anywhere | Quit; cancel first if a download is active |
 
-These targets are published only after native artifact tests pass. Alpine/musl and
-Windows arm64 are not supported by the standalone builds. The Python package requires
-Python 3.11+; CI tests 3.11 and 3.14.
+The details view includes the description, file metadata and destination folder.
+Choose Download to save the selected edition. Real byte progress is shown;
+a percentage appears only when the server supplies a reliable file length.
+Unknown lengths use an activity indicator rather than an invented percentage.
+Free-source countdowns are displayed while waiting.
 
-### Upgrade and uninstall
+Cancel removes unfinished files. An in-flight network operation may need to finish
+or reach its timeout before cancellation completes. The results remain available
+after a download or cancellation. Network failures, missing sources and filesystem
+errors appear in the interface so you can return and try another edition.
 
-Run the installer again with the desired `ANNA_VERSION`. Without that variable it
-selects the latest **stable** release, which may not exist during the preview phase.
-Use `ANNA_INSTALL_DIR` to override the destination. The default is `~/.local/bin` on
-Linux/macOS and `%LOCALAPPDATA%\Programs\anna` on Windows. Installers explain how to
-add this directory to PATH; they do not edit your shell/profile or request admin rights.
+Preferences save the language, format and download folder. Changes to search filters
+apply to the current session; use Settings to save defaults. The interface needs an
+interactive terminal; pipes and automation can use the commands below.
 
-Remove the installed executable to uninstall. For a uv installation, use
-`uv tool uninstall annas-archive-cli`; after PyPI publication, upgrade with
-`uv tool upgrade annas-archive-cli`. For GitHub wheel installs, install the new version's
-wheel URL with `uv tool install --reinstall <URL>`. Downloaded books are never removed.
-
-## Usage
+## One-command and scripting use
 
 ```sh
-anna search "Jane Austen" --lang en --ext epub --limit 5
-anna search "三体" --lang zh --ext epub --json
-anna search "Pride and Prejudice" --sort smallest --page 2
+anna get "Pride and Prejudice" --author "Jane Austen"
+anna get "Frankenstein" --author "Mary Shelley" --format epub
+anna get "Pride and Prejudice" --author "Jane Austen" -d ./reading
+anna search "Jane Austen"
+anna search "Jane Austen" --no-select
+```
+
+Both search and get default to English EPUBs. Explicit `--lang`, `--ext` (search)
+or `--format` (get) override saved preferences. Author matching uses whole name
+words and accepts surname-first entries such as “Austen, Jane”. It filters the
+returned page before numbering; it does not fetch extra pages or guarantee an exact
+identity match. The default limit is 20 results.
+
+In a terminal, search lets you choose a result immediately. Use `--no-select` for
+a listing only. Redirected output and `--json` searches never prompt; `--select`
+requests selection explicitly but still requires terminal input.
+
+For scripts, inspect the numbered results and explicitly choose one:
+
+```sh
+anna search "Pride and Prejudice Jane Austen" --lang en --ext epub --json
+anna get "Pride and Prejudice" --author "Jane Austen" --choose 1 --json
+```
+
+`--choose` is one-based, relative to the current filtered results. Results can change
+between runs; use a record MD5 or URL with `download` when a stable identifier matters.
+Get always requires a deliberate selection; without `--choose`, non-interactive
+and JSON calls fail clearly rather than downloading the first match.
+
+## Remember your preferences
+
+```sh
+anna config set format epub
+anna config set language en
+anna config set directory "~/Books"
+anna config show
+```
+
+Preferences are stored in `~/.config/anna/config.json`, or under
+`$XDG_CONFIG_HOME/anna/config.json`. Set `ANNA_CONFIG` to use another file.
+
+```json
+{
+  "language": "en",
+  "format": "epub",
+  "directory": "~/Books"
+}
+```
+
+Command options override preferences, which override built-in defaults. One-off
+options are not saved automatically. Only language, format and directory are stored;
+cookies and account credentials are never saved here. Invalid preferences produce
+a clear error with the file location.
+
+## Existing commands
+
+```sh
+anna search "Jane Austen" --lang en --ext epub --limit 5 --no-select
+anna search "Pride and Prejudice" --sort smallest --page 2 --json
 anna info <MD5-or-record-URL>
 anna links <MD5-or-record-URL> --json
 anna download <MD5-or-record-URL> --source 2 -o book.epub
@@ -87,84 +145,77 @@ anna download <file-URL> -d downloads --md5 <expected-MD5>
 anna doctor --json
 ```
 
-Replace angle-bracket placeholders with values. Search prints record URLs and
-copyable next-step commands using the first result's MD5. Use another result's URL
-or MD5 to select it; list numbers are not record IDs. Details and source listings
-also show the next download command, and explicit connection options are retained.
-These hints appear only in human-readable output; `--json` remains pure data.
-`--source` selects the one-based index printed by `anna links`; without it, download
-chooses the first non-fast HTTP source. It does not switch sources automatically.
-Free-source countdowns are honored for up to 300 seconds; use `--max-wait 0` to fail
-immediately or `--max-wait 600` to allow longer waits. Interactive terminals show
-a live `MM:SS` countdown on stderr, updated in place every second. JSON mode and
-redirected stderr emit one waiting line per countdown. Ctrl+C cancels the wait.
-`--limit` caps records on the requested page, not the number of pages fetched.
-`--lang`, `--ext` and `--content` may be repeated.
+Search, info, links, download and doctor remain available. Replace angle-bracket
+placeholders with real values. Search filters `--lang`, `--ext` and `--content` can
+be repeated. `--limit` caps records on one page.
 
-Downloads follow HTTP redirects and explicit file-download controls. Data is streamed
-into a temporary file in the destination directory and published without overwriting
-existing files. Record downloads always verify the record MD5; direct URL downloads
-can use `--md5`. MD5 identifies catalog files, while release archives use SHA-256.
-HTML/JSON/XML responses, empty downloads, length mismatches and MD5 failures are
-rejected. Temporary files are removed on errors and interruption. Filesystems must
-support hard links for atomic no-overwrite publication (for example, ext4/APFS/NTFS).
-There is no resume support.
+**Changed defaults:** downloads now go to `~/Books` or your saved folder rather
+than the current directory; use `-d .` for the former behaviour. Search now applies
+saved language/format defaults and prompts in a terminal; use explicit filters and
+`--no-select` when adapting existing scripts.
 
-## Mirrors, Cookies and proxies
+`--source` chooses the one-based source from `links`; otherwise download uses the
+first non-fast HTTP source. It does not automatically switch download sources.
+Free-source countdowns are honoured for up to 300 seconds; `--max-wait 0` fails
+immediately, and `--max-wait 600` permits a longer wait. Ctrl+C cancels.
+
+Record downloads verify the catalogue MD5. Downloads are streamed to temporary files
+and published atomically without overwriting existing files. Empty files,
+HTML/JSON/XML responses, length mismatches and checksum failures are rejected.
+Temporary files are removed on error or interruption. The destination filesystem
+must support hard links. There is no resume support.
+
+## Advanced connection options
+
+By default, Anna tries `.gd` first and falls back to `.gl` for connection failures,
+blocked pages, HTTP errors or unrecognised layouts. If `.gl` is tried first and
+blocked, automatic selection can fall back to `.gd`. A successful mirror is reused
+within that client session. An HTTP 200 parking page is not accepted as a working
+mirror. Genuine empty results do not trigger fallback.
+
+A rate limit stops the request and asks you to try later. The CLI does not route
+round it. Mirror availability changes; deterministic tests are independent of live
+availability. No automatic mirror health is persisted between commands.
+
+Pin a verified mirror only when needed:
 
 ```sh
-anna --base-url https://annas-archive.gl doctor
-anna --cookies /path/to/cookies.txt search "Pride and Prejudice"
-anna --timeout 60 search "Pride and Prejudice"
+anna --base-url https://annas-archive.gd doctor
+anna --timeout 60 get "Pride and Prejudice" --author "Jane Austen"
+anna --cookies /path/to/cookies.txt --user-agent "Your browser User-Agent" search "Jane Austen"
 ```
 
-Global options go **before** the subcommand. Precedence is command-line option,
-environment variable, then built-in default.
-
-| Option | Environment | Default |
-| --- | --- | --- |
-| `--base-url` | `ANNA_BASE_URL` | `https://annas-archive.gl` |
-| `--cookies` | `ANNA_COOKIES` | No Cookie file |
-| `--user-agent` | `ANNA_USER_AGENT` | Built-in browser-style User-Agent |
-| `--timeout` | `ANNA_TIMEOUT` | 30 seconds per network operation |
-
-Standard `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, `SSL_CERT_FILE` and
-`SSL_CERT_DIR` are supported through httpx. SOCKS support is included.
-Netscape Cookie files are read with domain/path/expiry restrictions. Cookies may be
-bound to browser fingerprints, IP or User-Agent; exporting them does not guarantee
-access. Match the browser User-Agent when needed. Cookies are not transferred between
-mirrors or saved in the repository. TLS certificate validation remains enabled.
-
-Mirror domains change. Verify a new origin before passing it to `--base-url`.
-An HTTP 200 parking or advertising page is not a functioning mirror. Unknown page
-layouts produce errors rather than silently returning no results. `doctor` inspects
-live mirror availability separately from deterministic CI tests.
+Global options go before the subcommand. Explicit `--base-url` or `ANNA_BASE_URL`
+pins that mirror and disables automatic fallback. Other advanced variables are
+`ANNA_COOKIES`, `ANNA_USER_AGENT` and `ANNA_TIMEOUT`.
+Cookies remain domain/path/expiry restricted and are not copied between mirrors.
+Browser verification may still need manual action; this is not a CAPTCHA solver.
+TLS certificate validation remains enabled. httpx supports standard proxy and
+certificate environment variables, including SOCKS proxies.
 
 ## Scripting contract
 
-All commands accept `--json`; the global position is also supported. JSON data goes
-to stdout. Human-mode progress/errors go to stderr. JSON-mode operational errors go
-to stdout with exit status 1; Click usage errors remain on stderr with status 2.
-Successful empty searches return `[]` with status 0. Ctrl-C exits 1.
+`search`, `get`, `info`, `links`, `download` and `doctor` accept `--json`,
+including the global position. Data goes to stdout; progress goes to stderr.
+JSON operational errors return an error object and status 1. Click usage errors
+remain on stderr with status 2. Empty searches return `[]` and status 0.
+Configuration commands produce human-readable output.
 
 | Command | JSON result |
 | --- | --- |
-| `search` | Array of book records |
-| `info` | Book record, including `links` |
-| `links` | Array of `{index, label, url, kind}` |
-| `download` | `{path, bytes, md5}` |
-| `doctor` | `{base_url, ok, results}` |
+| search | Array of book records |
+| info | Book record, including links |
+| links | Array of source records with index, label, url and kind |
+| get / download | Object with path, bytes and md5 |
+| doctor | Object with base_url, ok and results |
 
 ```json
-{"error":{"code":"browser_verification_required","type":"ChallengeError","message":"Browser verification required..."}}
+{"error":{"code":"operation_failed","type":"AnnaError","message":"No working mirror found..."}}
 ```
 
-Use `error.code` in scripts. Codes include `browser_verification_required`,
-`unrecognized_page`, `network_error`, `filesystem_error`, `invalid_input`,
-`file_exists`, `integrity_error`, `rate_limited`, `download_wait_required`,
-`http_error` and `operation_failed`.
-`type` is retained for compatibility/diagnostics; English messages are not stable APIs.
-Breaking CLI/JSON changes are called out in the changelog, including during 0.x releases.
+Existing error codes and JSON fields are preserved; cancellation adds `download_cancelled`. English error messages are not
+stable APIs. Mirror exhaustion reports the failure categories and recovery options;
+a pinned mirror retains the original detailed error.
 
 ## Development
 
@@ -178,22 +229,18 @@ uv build
 uv run twine check dist/*
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md),
-[release operations](docs/releasing.md) and [CHANGELOG.md](CHANGELOG.md).
-Documentation, comments, docstrings, interface text and new collaboration/release
-text are English. Book metadata and multilingual fixtures retain their original text.
+Tests exercise keyboard navigation, dialogs, settings, download progress and cancellation
+through Textual's headless event loop, as well as the existing CLI and networking tests.
+They use synthetic data and reduced public HTML fixtures. They never need account
+credentials or live mirrors. See [CONTRIBUTING.md](CONTRIBUTING.md),
+[SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
 
-Parsing was independently implemented against the public HTML layout documented in
-[Anna's Archive source](https://github.com/LilyLoops/annas-archive/tree/main/allthethings).
-Fixtures include synthetic examples and reduced public HTML snapshots of Gutenberg
-book records. No ebooks, account credentials or browser runtime are included.
-
-Opt-in live acceptance (downloads a public-domain EPUB to a temporary directory):
+The inherited opt-in public-domain acceptance test downloads a Gutenberg EPUB into
+a temporary directory, checks the catalogue MD5 and EPUB CRC, then removes it:
 
 ```sh
-uv run python scripts/live_smoke.py
+uv run python scripts/live_smoke.py --base-url https://annas-archive.gd
 ```
 
-This runs the actual CLI outside the checkout, verifies search, details, sources,
-downloaded bytes, catalog MD5 and EPUB CRC, and then removes the test download.
-It is separate from deterministic CI because mirrors and protection rules change.
+Historical upstream evidence is in [live verification](docs/live-verification.md);
+it does not establish current mirror availability or acceptance of this fork.

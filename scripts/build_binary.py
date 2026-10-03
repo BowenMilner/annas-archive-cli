@@ -38,6 +38,8 @@ def main():
             "anna",
             "--collect-data",
             "certifi",
+            "--collect-all",
+            "textual",
             "--hidden-import",
             "socksio",
             "--distpath",
@@ -84,6 +86,15 @@ def main():
         "socksio",
         "pyinstaller",
         "colorama",
+        "textual",
+        "rich",
+        "markdown-it-py",
+        "mdurl",
+        "pygments",
+        "platformdirs",
+        "linkify-it-py",
+        "uc-micro-py",
+        "mdit-py-plugins",
     ]
     notices = []
     for name in runtime:
