@@ -211,7 +211,8 @@ owner-only files. Unrelated sites' cookies are excluded. Delete that directory t
 forget saved sessions and mirror preferences. No browser passwords are read.
 The website can require another check after expiry, network/IP changes or changed
 browser settings; Anna cannot guarantee permanent clearance or solve the check.
-Blocked HTTP responses do not overwrite the saved browser session. Remaining slow
+Blocked HTTP responses do not overwrite the saved browser session. Server-renewed
+cookies also survive the move from catalogue to download within the same run. Remaining slow
 routes behind the same verification block are skipped; independent HTTP sources
 for the selected edition remain eligible.
 
@@ -233,11 +234,18 @@ the specific edition. Availability and matching are not guaranteed.
 
 ## Advanced connection options
 
-By default, Anna tries the last successful mirror, or `.gd` first and falls back to `.gl` for connection failures,
+By default, Anna tries the last successful mirror, or `.gd` first, then `.gl` and
+`.pk`, for connection failures,
 blocked pages, HTTP errors or unrecognised layouts. If `.gl` is tried first and
 blocked, automatic selection can fall back to `.gd`. A successful mirror is reused
 across launches. An HTTP 200 parking page is not accepted as a working
 mirror. Genuine empty results do not trigger fallback.
+
+Blocked public slow-download pages also try the other advertised mirrors while
+keeping the exact selected MD5 and route index. Once a page works, later routes
+use that mirror. Explicit mirrors and source selections stay pinned; query-bearing
+routes and signed external file URLs are never copied to another mirror. A working
+catalogue or countdown page does not guarantee that its file server is available.
 
 A rate limit stops the request and asks you to try later. The CLI does not route
 round it. Mirror availability changes; deterministic tests are independent of live

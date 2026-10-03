@@ -355,3 +355,141 @@ def test_mirror_check_is_not_repeated_across_alias_routes(tmp_path):
         result = download_record(client, book, directory=tmp_path)
     assert result["md5"] == MD5
     assert requests == ["archive.example", "other.example"]
+
+
+def test_auto_download_mirror_fallback_keeps_exact_record_and_cookie_scope(tmp_path):
+    from anna.client import DEFAULT_MIRRORS
+    from anna.session import import_file
+
+    cookie_file = tmp_path / "cookies.txt"
+    cookie_file.write_text(
+        "# Netscape HTTP Cookie File\n.annas-archive.gd\tTRUE\t/\tTRUE\t0\tclearance\tprivate-gd\n"
+    )
+    import_file(DEFAULT_MIRRORS[0], cookie_file, "Firefox/test")
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        if request.url.host != "annas-archive.pk":
+            return httpx.Response(403, text="<title>DDOS-GUARD</title>")
+        assert MD5 in request.url.path
+        assert request.url.path.endswith("/0/7")
+        assert "cookie" not in request.headers
+        return httpx.Response(200, content=DATA)
+
+    with Client(transport=httpx.MockTransport(handle)) as client:
+        result = client.download(
+            DEFAULT_MIRRORS[0] + "/slow_download/" + MD5 + "/0/7",
+            directory=tmp_path,
+            expected_md5=MD5,
+        )
+        assert client.base_url == "https://annas-archive.pk"
+    assert result["md5"] == MD5
+    assert [request.url.host for request in requests] == [
+        "annas-archive.gd",
+        "annas-archive.gd",
+        "annas-archive.gl",
+        "annas-archive.gl",
+        "annas-archive.pk",
+    ]
+
+
+def test_explicit_download_mirror_stays_pinned_after_check(tmp_path):
+    from anna.errors import ChallengeError
+
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(403, text="<title>DDOS-GUARD</title>")
+
+    with Client(BASE, transport=httpx.MockTransport(handle)) as client:
+        with pytest.raises(ChallengeError):
+            client.download(BASE + "/slow_download/" + MD5 + "/0/0", directory=tmp_path)
+    assert len(requests) == 2
+    assert all(request.url.host == "archive.example" for request in requests)
+
+
+def test_rate_limit_on_auto_download_never_switches_mirror(tmp_path):
+    from anna.client import DEFAULT_MIRRORS
+
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(429)
+
+    with Client(transport=httpx.MockTransport(handle)) as client:
+        with pytest.raises(RateLimitError):
+            client.download(
+                DEFAULT_MIRRORS[0] + "/slow_download/" + MD5 + "/0/0", directory=tmp_path
+            )
+    assert len(requests) == 1
+
+
+def test_later_slow_routes_use_mirror_selected_during_previous_download(tmp_path):
+    from anna.client import DEFAULT_MIRRORS
+
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        if request.url.host != "annas-archive.pk":
+            return httpx.Response(403, text="<title>DDOS-GUARD</title>")
+        if request.url.path.endswith("/0/0"):
+            raise httpx.ReadTimeout("route offline", request=request)
+        return httpx.Response(200, content=DATA)
+
+    book = record(2)
+    for i, link in enumerate(book.links):
+        link.url = DEFAULT_MIRRORS[0] + "/slow_download/" + MD5 + f"/0/{i}"
+    with Client(transport=httpx.MockTransport(handle)) as client:
+        result = download_record(client, book, directory=tmp_path)
+    assert result["md5"] == MD5
+    assert requests[-1].url.host == "annas-archive.pk"
+    assert requests[-1].url.path.endswith("/0/1")
+    assert len(requests) == 6
+
+
+def test_working_download_page_mirror_is_remembered_even_when_file_server_stalls(tmp_path):
+    from anna.client import DEFAULT_MIRRORS
+    from anna.session import preferred_origin
+
+    def handle(request):
+        if request.url.host == "files.example":
+            raise httpx.ReadTimeout("upstream stalled", request=request)
+        if request.url.host != "annas-archive.pk":
+            return httpx.Response(403, text="<title>DDOS-GUARD</title>")
+        return httpx.Response(
+            200,
+            text='<html><a download href="https://files.example/book.pdf">Download</a></html>',
+            headers={"content-type": "text/html"},
+        )
+
+    with Client(transport=httpx.MockTransport(handle)) as client:
+        with pytest.raises(httpx.ReadTimeout):
+            client.download(
+                DEFAULT_MIRRORS[0] + "/slow_download/" + MD5 + "/0/0", directory=tmp_path
+            )
+    assert preferred_origin(DEFAULT_MIRRORS) == "https://annas-archive.pk"
+    assert not list(tmp_path.iterdir())
+
+
+def test_download_route_with_query_is_not_copied_to_another_mirror(tmp_path):
+    from anna.client import DEFAULT_MIRRORS
+    from anna.errors import ChallengeError
+
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(403, text="<title>DDOS-GUARD</title>")
+
+    with Client(transport=httpx.MockTransport(handle)) as client:
+        with pytest.raises(ChallengeError):
+            client.download(
+                DEFAULT_MIRRORS[0] + "/slow_download/" + MD5 + "/0/0?token=site-specific",
+                directory=tmp_path,
+            )
+    assert len(requests) == 2
+    assert all(request.url.host == "annas-archive.gd" for request in requests)

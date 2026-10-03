@@ -2,6 +2,7 @@ import http.cookiejar
 import os
 import sqlite3
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -286,3 +287,68 @@ def test_session_check_uses_exact_page_without_following_file_link(tmp_path):
             client.verify_session("https://other.example/check")
     assert requests == [target]
     assert list(tmp_path.iterdir()) == []
+
+
+def test_reactivated_origin_keeps_live_cookie_renewals(tmp_path):
+    from anna.session import import_file
+
+    cookie_file = tmp_path / "cookies.txt"
+    cookie_file.write_text(
+        "# Netscape HTTP Cookie File\n.annas-archive.gd\tTRUE\t/\tTRUE\t0\tclearance\told-session\n"
+    )
+    import_file(DEFAULT_MIRRORS[0], cookie_file, "Firefox/test")
+    data = b"lawful public-domain test"
+
+    def handle(request):
+        if request.url.path == "/catalogue":
+            assert request.headers["cookie"] == "clearance=old-session"
+            return httpx.Response(
+                200,
+                text="<html>Catalogue</html>",
+                headers={
+                    "set-cookie": (
+                        "clearance=renewed-session; Domain=.annas-archive.gd; Path=/; Secure"
+                    )
+                },
+            )
+        if request.headers.get("cookie") != "clearance=renewed-session":
+            return httpx.Response(403, text="<title>DDOS-GUARD</title>")
+        return httpx.Response(200, content=data)
+
+    with Client(DEFAULT_MIRRORS[0], transport=httpx.MockTransport(handle)) as client:
+        client.page("/catalogue")
+        result = client.download(DEFAULT_MIRRORS[0] + "/file.epub", directory=tmp_path)
+    assert Path(result["path"]).read_bytes() == data
+    jar, _ = load_session(DEFAULT_MIRRORS[0])
+    assert [(cookie.name, cookie.value) for cookie in jar] == [("clearance", "renewed-session")]
+
+
+def test_session_check_uses_same_slow_route_retry_as_downloader():
+    requested = []
+    target = DEFAULT_MIRRORS[0] + "/slow_download/" + "a" * 32 + "/0/7"
+
+    def handle(request):
+        requested.append(request.url.raw_path)
+        if request.url.raw_path.startswith(b"/slow_download/"):
+            return httpx.Response(403, text="<title>DDOS-GUARD</title>")
+        return httpx.Response(200, text='<span class="js-partner-countdown">15</span>')
+
+    with Client(DEFAULT_MIRRORS[0], transport=httpx.MockTransport(handle)) as client:
+        client.verify_session(target)
+    assert len(requested) == 2
+    assert requested[-1].startswith(b"/slow%5Fdownload/")
+
+
+def test_session_check_does_not_retry_a_rate_limit():
+    from anna.errors import RateLimitError
+
+    requested = []
+
+    def handle(request):
+        requested.append(request)
+        return httpx.Response(429)
+
+    with Client(DEFAULT_MIRRORS[0], transport=httpx.MockTransport(handle)) as client:
+        with pytest.raises(RateLimitError):
+            client.verify_session(DEFAULT_MIRRORS[0])
+    assert len(requested) == 1

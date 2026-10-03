@@ -244,3 +244,44 @@ skipped, preserving independent HTTP alternatives for the exact catalogue MD5.
 
 117 deterministic tests, Ruff and application type checks passed. These are
 session-recovery and retry fixes, not acceptance of the user's 24.8 MB download.
+
+
+## Terminal-only continuation — 0.3.0a9
+
+With desktop interaction deferred, ordinary HTTPX and curl requests both received
+403 verification pages using the saved site session. A fresh site-only import
+from the running Firefox database and a browser-compatible HTTP transport also
+received 403. An isolated headless Firefox process remained on the check page;
+no human checks were attempted, desktop windows opened or VPN settings changed.
+These diagnostic dependencies were temporary, not added to Anna.
+
+The archive's own catalogue advertises `.pk` alongside `.gd` and `.gl`. Direct
+requests to `.pk` successfully retrieved exact record
+`fb73d4fd19b0da98923365cb85a03a2b` and followed its real countdown to fresh partner
+file URLs, without browser verification. Fresh file requests on two advertised
+hosts timed out before receiving bytes. An older exact-file URL also timed out
+with both ordinary and explicitly VPN-bound curl connections. A small independent
+archive control again downloaded 277,900 bytes with catalogue MD5
+`51d2b22ca12a8b470b51f543298b34c9`; that is not the user's selected file.
+
+The implementation previously considered only `.gd` and `.gl`, and automatic
+mirror fallback applied to catalogue parsing rather than challenged download
+pages. The update includes `.pk` and recovers public slow routes across those
+advertised mirrors, retaining the MD5 and route index. It remembers a working
+page mirror separately from file availability. Tests exercise all three mirrors,
+later-route selection, exact-file checksum, cookie isolation, explicit pinning,
+query isolation and rate-limit stops. 126 deterministic tests, Ruff and application
+type checks pass. Exact large-file download acceptance remains unresolved.
+
+
+The installed automatic-route check subsequently received verification blocks
+from all three mirrors; a later direct `.pk` request again resolved a fresh file
+link, then timed out. Mirror access is intermittent, not guaranteed by its earlier
+successful countdown. Further code inspection reproduced another client defect:
+reactivating an origin reloaded older disk cookies over cookies renewed by the
+previous server response. The fix loads each origin once per client and retains
+live cookie updates. A synthetic catalogue-to-file transition now succeeds with
+the renewed cookie and persists it. Session validation also follows the same
+bounded equivalent-route retry as downloads; rate limits remain terminal.
+The final suite has 126 tests. These fixes do not claim the stalled remote file
+has become available.

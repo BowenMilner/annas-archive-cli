@@ -7,7 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from anna import cli
-from anna.client import Client
+from anna.client import DEFAULT_MIRRORS, Client
 from anna.config import load_config
 from anna.errors import AnnaError, RateLimitError
 from anna.parsing import Book, Link
@@ -73,7 +73,7 @@ def test_all_mirrors_fail_bounded_and_clear():
     with Client(transport=httpx.MockTransport(handler)) as client:
         with pytest.raises(AnnaError, match="No working mirror"):
             client.search("Austen")
-    assert len(requests) == 4
+    assert len(requests) == 2 * len(DEFAULT_MIRRORS)
 
 
 def test_rate_limit_does_not_switch_mirrors():
