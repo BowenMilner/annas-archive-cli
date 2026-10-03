@@ -15,6 +15,8 @@ from anna.errors import (
     AnnaError,
     ChallengeError,
     DownloadCancelledError,
+    DownloadPageError,
+    DownloadSourcesError,
     DownloadWaitError,
     FileExistsError,
     HTTPStatusError,
@@ -36,6 +38,79 @@ DEFAULT_USER_AGENT = (
 def check_cancelled(cancelled):
     if cancelled and cancelled():
         raise DownloadCancelledError("Download cancelled; unfinished file removed.")
+
+
+def download_record(
+    client,
+    book: Book,
+    *,
+    source: int | None = None,
+    source_progress: Callable[[int, int], None] | None = None,
+    **options,
+) -> dict:
+    """Try at most three listed free sources, keeping the selected record checksum."""
+    if source is not None:
+        if not 1 <= source <= len(book.links):
+            raise AnnaError(f"Record has {len(book.links)} sources; --source is out of range.")
+        candidates = [book.links[source - 1]]
+    else:
+        eligible = [
+            link
+            for link in book.links
+            if link.kind != "fast" and link.url.startswith(("http://", "https://"))
+        ]
+
+        # The listed Libgen file page has a direct GET control and avoids the
+        # partner countdown. Other external catalogue/login pages stay last.
+        def priority(link):
+            parsed = urlsplit(link.url)
+            if parsed.hostname == "libgen.li" and parsed.path == "/ads.php":
+                return 0
+            return 1 if link.kind == "slow" else 2
+
+        eligible.sort(key=priority)
+        candidates = []
+        seen = set()
+        for link in eligible:
+            if link.url not in seen:
+                seen.add(link.url)
+                candidates.append(link)
+        candidates = candidates[:3]
+    if not candidates:
+        raise AnnaError("No free HTTP download source; try another edition.")
+    failures = []
+    started = time.monotonic()
+    max_wait = options.get("max_wait", 300)
+    if max_wait < 0:
+        raise InvalidInputError("--max-wait cannot be negative.")
+    for index, link in enumerate(candidates, 1):
+        check_cancelled(options.get("cancelled"))
+        if source_progress:
+            source_progress(index, len(candidates))
+        check_cancelled(options.get("cancelled"))
+        attempt_options = {
+            **options,
+            "max_wait": max(0, int(max_wait - (time.monotonic() - started))),
+        }
+        try:
+            return client.download(link.url, expected_md5=book.md5, **attempt_options)
+        except (httpx.TransportError, HTTPStatusError, ChallengeError, DownloadPageError) as exc:
+            check_cancelled(options.get("cancelled"))
+            if source is not None:
+                raise  # An explicit source must remain pinned.
+            host = urlsplit(link.url).hostname or "the source"
+            if isinstance(exc, httpx.RequestError):
+                try:
+                    host = exc.request.url.host
+                except RuntimeError:
+                    pass
+            reason = "timed out" if isinstance(exc, httpx.TimeoutException) else "was unavailable"
+            failures.append(f"Source {index} {reason} ({host})")
+    raise DownloadSourcesError(
+        "No free source completed the download. "
+        + "; ".join(failures)
+        + ". Try again later or choose another edition."
+    )
 
 
 def http_url(value: str) -> str:
@@ -100,6 +175,27 @@ def download_link(html: str, base_url: str) -> str:
         if not re.fullmatch(r"\d{1,6}", value):
             raise AnnaError("Unrecognized download countdown; no file was saved.")
         raise DownloadWaitError(int(value))
+    # Some current partner routes advertise a compact link or a visible copy-only
+    # URL rather than an anchor. Read the visible control; never execute its script.
+    for anchor in soup.select("a[href]"):
+        if text(anchor).casefold() == "download with short filename":
+            return http_url(urljoin(base_url, str(anchor["href"])))
+    copied = []
+    for button in soup.select('button[onclick*="navigator.clipboard.writeText"]'):
+        sibling = button.find_next_sibling("span", class_="break-all")
+        if sibling is not None:
+            value = text(sibling)
+            if value.startswith(("http://", "https://")):
+                copied.append(http_url(value))
+    if copied:
+        return next(
+            (
+                value
+                for value in copied
+                if urlsplit(value).path.rsplit("/", 1)[-1].startswith("annas-arch-")
+            ),
+            copied[0],
+        )
     candidates = soup.select("a[download][href], a#download[href]")
     if not candidates:
         candidates = [
@@ -112,7 +208,7 @@ def download_link(html: str, base_url: str) -> str:
         target = urljoin(base_url, str(anchor["href"]))
         if target != base_url:
             return http_url(target)
-    raise AnnaError(
+    raise DownloadPageError(
         "Download returned a web page requiring verification, login or waiting. "
         "Obtain the final file URL in your browser and run anna download URL; "
         "no page was saved."
@@ -219,6 +315,7 @@ class Client:
         wait_progress: Callable[[int], None] | None = None,
         cancelled: Callable[[], bool] | None = None,
         total_progress: Callable[[int | None], None] | None = None,
+        request_progress: Callable[[str], None] | None = None,
     ) -> dict:
         if max_wait < 0:
             raise InvalidInputError("--max-wait cannot be negative.")
@@ -234,7 +331,14 @@ class Client:
             check_cancelled(cancelled)
             try:
                 return self._download(
-                    url, output, directory, expected_md5, progress, cancelled, total_progress
+                    url,
+                    output,
+                    directory,
+                    expected_md5,
+                    progress,
+                    cancelled,
+                    total_progress,
+                    request_progress,
                 )
             except ChallengeError:
                 if not same_mirror_slow or not parsed.raw_path.startswith(b"/slow_download/"):
@@ -269,12 +373,19 @@ class Client:
         progress: Callable[[int], None] | None,
         cancelled: Callable[[], bool] | None = None,
         total_progress: Callable[[int | None], None] | None = None,
+        request_progress: Callable[[str], None] | None = None,
     ) -> dict:
         if expected_md5:
             expected_md5 = record_id(expected_md5)
         for _ in range(4):
             check_cancelled(cancelled)
             http_url(url)
+            if request_progress:
+                request_progress(
+                    "Requesting download link…"
+                    if urlsplit(url).hostname == urlsplit(self.base_url).hostname
+                    else "Contacting file server…"
+                )
             with self.http.stream("GET", url) as response:
                 if response.status_code >= 400:
                     check_status(

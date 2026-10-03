@@ -56,3 +56,25 @@ The `annas-archive.pk` mirror returned valid search and record pages during thes
 checks, but complete runs encountered connection errors. It is not counted as a
 successful end-to-end mirror. Availability of other records, external sources,
 long queues and other network exits is not established by these small-book tests.
+
+## Fork TUI acceptance — 3 October 2026
+
+The fork's complete headless TUI event loop completed live search, edition details
+and download on this Arch host using automatic mirror selection. The listed
+Libgen.li file source returned the same selected catalogue edition:
+
+- Title: Pride and Prejudice, Project Gutenberg, 1998.
+- Catalogue MD5: `51d2b22ca12a8b470b51f543298b34c9`.
+- Downloaded size: 277900 bytes.
+- Catalogue MD5, EPUB mimetype and ZIP CRC all passed.
+- The test file was downloaded to a temporary directory and removed afterwards.
+
+The first partner file server timed out after its countdown. Additional partner
+routes also timed out, including copy-only HTTP URLs. A reduced, sanitised fixture
+records the observed copy-only control layout. The fork now prefers the record's
+listed Libgen file source, then tries bounded free-source alternatives; it does not
+substitute a different edition or disable checksum/TLS verification.
+
+This verifies the live network and UI event flow on this host. It is separate from
+manual acceptance in the user's terminal and does not establish availability of all
+records or source servers.
