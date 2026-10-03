@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.0a1 — terminal book browser
+
+- Launch a Textual TUI with bare `anna`: searchable results, edition details,
+  saved settings, byte progress and cancellable background downloads.
+- Add `anna get QUERY --author NAME --format epub` with numbered selection and
+  explicit `--choose` for scripts.
+- Make terminal searches selectable; preserve JSON arrays and add `--no-select`.
+- Prefer .gd automatically and fall back between .gd and .gl for blocked, unavailable
+  or unrecognised pages. Explicit mirrors stay pinned; rate limits stop requests.
+- Add atomic JSON preferences and `anna config show/set`.
+- Default searches to saved English/EPUB preferences and downloads to `~/Books`;
+  use explicit filters, `--no-select` and `-d .` to adapt older workflows.
+- Preserve existing commands, checksum verification and no-overwrite protection.
+- Clarify that users must verify rights for the selected edition.
+
+
 ## 0.2.0rc4
 
 - Update free-source countdowns every second in interactive terminals, showing

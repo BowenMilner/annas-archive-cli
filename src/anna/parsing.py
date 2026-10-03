@@ -251,3 +251,12 @@ def parse_info(html: str, base_url: str, md5: str) -> Book:
         links=extract_links(soup, base_url),
         **metadata_fields(text(meta)),
     )
+
+
+def author_matches(actual, requested):
+    """Match whole name words, allowing catalogue surname-first punctuation."""
+
+    def words(value):
+        return re.findall(r"[^\W_]+", value.casefold())
+
+    return set(words(requested)).issubset(set(words(actual))) and bool(words(requested))

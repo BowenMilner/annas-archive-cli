@@ -9,9 +9,10 @@ import click
 import httpx
 
 from anna import __version__
-from anna.client import DEFAULT_BASE_URL, DEFAULT_USER_AGENT, Client
+from anna.client import DEFAULT_USER_AGENT, Client
+from anna.config import KEYS, config_path, load_config, save_config
 from anna.errors import AnnaError
-from anna.parsing import record_id
+from anna.parsing import author_matches, record_id
 
 
 class ErrorGroup(click.Group):
@@ -42,19 +43,22 @@ class ErrorGroup(click.Group):
             raise click.ClickException(message) from exc
 
 
-@click.group(cls=ErrorGroup, context_settings={"help_option_names": ["-h", "--help"]})
+@click.group(
+    cls=ErrorGroup,
+    invoke_without_command=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
 @click.option(
     "--base-url",
     envvar="ANNA_BASE_URL",
-    default=DEFAULT_BASE_URL,
-    show_default=True,
-    help="Mirror origin URL.",
+    default=None,
+    help="Advanced: pin a mirror instead of automatically choosing one.",
 )
 @click.option(
     "--cookies",
     envvar="ANNA_COOKIES",
     type=click.Path(path_type=Path, exists=True),
-    help="Netscape Cookie file exported from your browser.",
+    help="Advanced: Netscape cookie file exported from your browser.",
 )
 @click.option(
     "--user-agent",
@@ -76,14 +80,29 @@ class ErrorGroup(click.Group):
 @click.version_option(__version__)
 @click.pass_context
 def main(ctx, base_url, cookies, user_agent, timeout, json_output):
-    """Search Anna's Archive, inspect records and download files."""
+    """Open the book browser, or use a command such as anna get QUERY.
+
+    Use only for books you are entitled to download.
+    """
     ctx.ensure_object(dict)
+    ctx.obj["json"] = json_output
     ctx.obj.update(
         json=json_output,
+        preferences=load_config(),
         client_options=dict(
             base_url=base_url, cookies=cookies, user_agent=user_agent, timeout=timeout
         ),
     )
+    if ctx.invoked_subcommand is None:
+        if json_output:
+            raise click.UsageError("Use a subcommand with --json, e.g. anna search QUERY --json.")
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise click.UsageError(
+                "The book browser needs a terminal. Use anna --help for commands."
+            )
+        from anna.tui import AnnaApp
+
+        AnnaApp(ctx.obj["client_options"], ctx.obj["preferences"]).run()
 
 
 def json_option(function):
@@ -194,15 +213,17 @@ class DownloadProgress:
     show_default=True,
     help="Maximum records from this page; does not fetch additional pages.",
 )
+@click.option("--select/--no-select", default=None, help="Choose a result to download.")
 @json_option
 @click.pass_context
-def search(ctx, query, lang, ext, content, sort, page, limit, json_output):
+def search(ctx, query, lang, ext, content, sort, page, limit, select, json_output):
     """Search by title, author, ISBN or keywords."""
     with prepare(ctx, json_output) as client:
+        preferences = ctx.obj["preferences"]
         books = client.search(
             " ".join(query),
-            lang=lang,
-            ext=ext,
+            lang=lang or (preferences["language"],),
+            ext=ext or (preferences["format"],),
             content=content,
             sort="" if sort == "relevance" else sort,
             page=page,
@@ -217,12 +238,18 @@ def search(ctx, query, lang, ext, content, sort, page, limit, json_output):
             click.echo(f"{i}. {book.title}")
             click.echo(f"   {book.author or 'Unknown author'} | {book.metadata}")
             click.echo(f"   {book.url}")
+        if select is True or (select is None and input_is_terminal()):
+            chosen = choose_book(books, None, ctx.obj["json"])
+            ctx.invoke(download, target=chosen.md5)
+            return
         click.echo("\nNext steps for result 1:")
         click.echo(f"  Download: {command_hint(ctx, 'download', books[0].md5)}")
         click.echo(f"  Details:  {command_hint(ctx, 'info', books[0].md5)}")
         click.echo(f"  Sources:  {command_hint(ctx, 'links', books[0].md5)}")
         click.echo("For another result, use its URL or MD5, not its list number.")
-        click.echo("Files are saved in the current directory. Add -d downloads to choose a folder.")
+        click.echo(
+            "Use --select to choose a result. Downloads default to ~/Books (or preferences)."
+        )
 
 
 @main.command()
@@ -312,8 +339,8 @@ def links(ctx, record, json_output):
     "-d",
     "--directory",
     type=click.Path(path_type=Path),
-    default=".",
-    help="Destination directory when -o is not specified.",
+    default=None,
+    help="Destination directory (saved preference or ~/Books).",
 )
 @click.option("--md5", "expected_md5", help="Verify the MD5 of a direct URL download.")
 @click.option(
@@ -327,6 +354,8 @@ def links(ctx, record, json_output):
 @click.pass_context
 def download(ctx, target, source, output, directory, expected_md5, max_wait, json_output):
     """Download a record by MD5/URL, or a direct HTTP(S) file URL."""
+    directory = (directory or Path(ctx.obj["preferences"]["directory"])).expanduser()
+    output = output.expanduser() if output else None
     with prepare(ctx, json_output) as client:
         try:
             md5 = record_id(target)
@@ -394,3 +423,98 @@ def doctor(ctx, json_output):
         click.echo(
             f"Mirror parsed successfully: {result['base_url']} ({result['results']} records)"
         )
+
+
+def input_is_terminal():
+    return sys.stdin.isatty()
+
+
+def choose_book(books, choice, json_output):
+    if choice:
+        if choice > len(books):
+            raise AnnaError(f"Only {len(books)} results; --choose is out of range.")
+        return books[choice - 1]
+    if json_output:
+        raise AnnaError("JSON downloads require --choose NUMBER; use anna search --json first.")
+    if not input_is_terminal():
+        raise AnnaError("Choose a result with --choose NUMBER, or run in a terminal.")
+    click.echo("Select a book you are entitled to download. Enter 0 to cancel.", err=True)
+    number = click.prompt("Book number", type=click.IntRange(0, len(books)), err=True)
+    if number == 0:
+        raise click.Abort()
+    return books[number - 1]
+
+
+@main.command()
+@click.argument("query", nargs=-1, required=True)
+@click.option("--author", help="Match author name words, including surname-first records.")
+@click.option("--format", "book_format", help="Book format (saved preference or epub).")
+@click.option("--lang", help="Language (saved preference or en).")
+@click.option("--limit", type=click.IntRange(min=1), default=20, show_default=True)
+@click.option(
+    "--choose", type=click.IntRange(min=1), help="Select a numbered result without prompting."
+)
+@click.option("-d", "--directory", type=click.Path(path_type=Path))
+@click.option("-o", "--output", type=click.Path(path_type=Path))
+@click.option("--max-wait", type=click.IntRange(min=0), default=300)
+@json_option
+@click.pass_context
+def get(
+    ctx, query, author, book_format, lang, limit, choose, directory, output, max_wait, json_output
+):
+    """Search, choose an edition and download it in one command."""
+    preferences = ctx.obj["preferences"]
+    query_text = " ".join(query)
+    if author:
+        query_text += " " + author
+    with prepare(ctx, json_output) as client:
+        books = client.search(
+            query_text,
+            lang=(lang or preferences["language"],),
+            ext=(book_format or preferences["format"],),
+            page=1,
+        )
+    if author:
+        books = [book for book in books if author_matches(book.author, author)]
+    books = books[:limit]
+    if not books:
+        raise AnnaError("No matching books found; try fewer keywords or a different format/author.")
+    if not ctx.obj["json"]:
+        for index, book in enumerate(books, 1):
+            click.echo(f"{index}. {book.title} — {book.author or 'Unknown author'}")
+            click.echo(f"   {book.metadata}")
+    selected = choose_book(books, choose, ctx.obj["json"])
+    ctx.invoke(
+        download,
+        target=selected.md5,
+        directory=directory,
+        output=output,
+        max_wait=max_wait,
+        json_output=json_output,
+    )
+
+
+@main.group()
+def config():
+    """Show or save your language, format and download folder."""
+
+
+@config.command("show")
+@click.pass_context
+def config_show(ctx):
+    """Show effective preferences and the configuration file location."""
+    click.echo(f"Preferences: {config_path()}")
+    emit(ctx.obj["preferences"])
+
+
+@config.command("set")
+@click.argument("key", type=click.Choice(KEYS))
+@click.argument("value")
+@click.pass_context
+def config_set(ctx, key, value):
+    """Save a preference, e.g. anna config set format epub."""
+    if not value.strip():
+        raise click.BadParameter("Preference cannot be empty.")
+    preferences = {**ctx.obj["preferences"], key: value}
+    path = save_config(preferences)
+    click.echo(f"Saved {key}: {value} ({path})")

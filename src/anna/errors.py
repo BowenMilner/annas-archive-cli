@@ -40,3 +40,7 @@ class DownloadWaitError(AnnaError):
         super().__init__(
             f"Free download requires another {seconds} seconds; increase --max-wait or retry later."
         )
+
+
+class DownloadCancelledError(AnnaError):
+    code = "download_cancelled"
