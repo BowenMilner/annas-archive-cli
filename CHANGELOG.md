@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0a8 — check browser-session reuse before retrying
+
+- Validate imported sessions against the exact challenged page before reporting
+  success or retrying. A session rejected by the site stays in guided setup with
+  a clear explanation, rather than restarting the failed transfer.
+- Preserve imported browser cookies when HTTP verification fails; only sessions
+  used successfully may update the saved cache.
+- Skip remaining slow routes behind an already observed mirror verification
+  block, while still trying independent HTTP sources for the same edition.
+- 117 deterministic tests pass. The exact 24.8 MB Austen archive transfer remains
+  unresolved; these fixes do not establish a successful live download.
+
 ## 0.3.0a7 — preserve signed-link browser identity
 
 - Keep the browser identity used to obtain a signed download link when contacting

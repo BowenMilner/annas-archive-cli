@@ -238,3 +238,51 @@ def test_download_challenge_keeps_exact_page_for_browser_setup():
     assert error.value.origin == DEFAULT_MIRRORS[0]
     assert error.value.verification_url.endswith("/0/7")
     assert "/slow%5Fdownload/" in error.value.verification_url
+
+
+@pytest.mark.parametrize("prior_success", [False, True])
+def test_blocked_response_does_not_overwrite_imported_browser_session(prior_success):
+    from anna.session import import_file
+
+    cookie_path, metadata = paths(DEFAULT_MIRRORS[0])
+    cookie_path.parent.mkdir(parents=True)
+    cookie_path.write_text(
+        "# Netscape HTTP Cookie File\n"
+        ".annas-archive.gd\tTRUE\t/\tTRUE\t0\tclearance\tbrowser-good\n"
+    )
+    import_file(DEFAULT_MIRRORS[0], cookie_path, "Firefox/test")
+    before = (cookie_path.read_bytes(), metadata.read_bytes())
+
+    def handle(request):
+        if request.url.path == "/working":
+            return httpx.Response(200, text="<html>Catalogue</html>")
+        return httpx.Response(
+            403,
+            text="<title>DDOS-GUARD</title>",
+            headers={"set-cookie": "clearance=blocked-replacement; Path=/; Secure"},
+        )
+
+    with Client(DEFAULT_MIRRORS[0], transport=httpx.MockTransport(handle)) as client:
+        if prior_success:
+            client.page("/working")
+        with pytest.raises(ChallengeError):
+            client.download(DEFAULT_MIRRORS[0] + "/slow_download/" + "a" * 32 + "/0/0")
+    assert (cookie_path.read_bytes(), metadata.read_bytes()) == before
+
+
+def test_session_check_uses_exact_page_without_following_file_link(tmp_path):
+    requests = []
+    target = DEFAULT_MIRRORS[0] + "/slow_download/" + "a" * 32 + "/0/7"
+
+    def handle(request):
+        requests.append(str(request.url))
+        return httpx.Response(
+            200, text='<html><a download href="https://files.example/book.epub">Download</a></html>'
+        )
+
+    with Client(DEFAULT_MIRRORS[0], transport=httpx.MockTransport(handle)) as client:
+        client.verify_session(target)
+        with pytest.raises(AnnaError, match="selected mirror"):
+            client.verify_session("https://other.example/check")
+    assert requests == [target]
+    assert list(tmp_path.iterdir()) == []

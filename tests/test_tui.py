@@ -378,6 +378,7 @@ def test_browser_check_saves_session_then_retries_search(tmp_path, monkeypatch):
     from anna.tui import BrowserCheckScreen
 
     monkeypatch.setattr("anna.tui.import_firefox", lambda *_: "Firefox test agent")
+    monkeypatch.setattr(Client, "verify_session", lambda *_: None)
     monkeypatch.setattr("anna.tui.remember_origin", lambda *_: None)
 
     async def scenario():
@@ -472,5 +473,40 @@ def test_browser_check_opens_challenged_download_page_on_same_origin(tmp_path, m
                 ).target_url
                 == "https://annas-archive.gd"
             )
+
+    asyncio.run(scenario())
+
+
+def test_imported_but_blocked_session_does_not_dismiss_or_retry(tmp_path, monkeypatch):
+    from anna.errors import ChallengeError
+    from anna.tui import BrowserCheckScreen
+
+    monkeypatch.setattr("anna.tui.import_firefox", lambda *_: "Firefox/test")
+    checked = []
+    remembered = []
+    target = "https://annas-archive.gd/slow_download/" + "a" * 32 + "/0/7"
+
+    def blocked(client, url):
+        checked.append(url)
+        raise ChallengeError("verification")
+
+    monkeypatch.setattr(Client, "verify_session", blocked)
+    monkeypatch.setattr("anna.tui.remember_origin", remembered.append)
+
+    async def scenario():
+        app = make_app(tmp_path)
+        async with app.run_test(size=(90, 36)) as pilot:
+            app.push_screen(BrowserCheckScreen("https://annas-archive.gd", target))
+            await pilot.pause()
+            await pilot.click("#reuse-browser")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert isinstance(app.screen, BrowserCheckScreen)
+            assert "still blocks Anna" in str(
+                app.screen.query_one("#connection-status", Label).render()
+            )
+            assert not app.books
+            assert not remembered
+            assert checked == [target]
 
     asyncio.run(scenario())

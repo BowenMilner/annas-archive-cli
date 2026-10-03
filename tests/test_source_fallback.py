@@ -327,3 +327,31 @@ def test_remaining_retry_budget_clips_next_network_timeout(monkeypatch, tmp_path
         result = download_record(client, record(2), directory=tmp_path, retry_budget=35)
     assert reads == [30, 5]
     assert result["md5"] == MD5
+
+
+def test_mirror_check_is_not_repeated_across_alias_routes(tmp_path):
+
+    book = record(16)
+    requests = []
+
+    def handler(request):
+        requests.append(request.url.host)
+        if request.url.host == "archive.example":
+            return httpx.Response(403, text="<title>DDOS-GUARD</title>")
+        return httpx.Response(200, content=DATA)
+
+    with Client(BASE, transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(DownloadSourcesError, match="Skipped 15 routes") as error:
+            download_record(client, book, directory=tmp_path)
+        assert error.value.origin == BASE
+        assert error.value.verification_url == BASE + "/source/0"
+    assert requests == ["archive.example"]
+    assert not list(tmp_path.iterdir())
+    book.links.append(Link("Independent source", "https://other.example/book.pdf", "external"))
+    # Keep it within the bounded list of eligible routes.
+    book.links.pop(1)
+    requests.clear()
+    with Client(BASE, transport=httpx.MockTransport(handler)) as client:
+        result = download_record(client, book, directory=tmp_path)
+    assert result["md5"] == MD5
+    assert requests == ["archive.example", "other.example"]
