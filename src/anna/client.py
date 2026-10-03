@@ -522,7 +522,7 @@ class Client:
                     else "Contacting file server…"
                 )
             self.activate_session(url)
-            request_options = {}
+            request_timeout = self.http.timeout
             if contact_deadline is not None:
                 remaining = contact_deadline - time.monotonic()
                 if remaining <= 0:
@@ -530,13 +530,13 @@ class Client:
                         "File-server retry budget exhausted", request=httpx.Request("GET", url)
                     )
                 configured = self.http.timeout
-                request_options["timeout"] = httpx.Timeout(
+                request_timeout = httpx.Timeout(
                     **{
                         name: min(value, remaining) if value is not None else remaining
                         for name, value in configured.as_dict().items()
                     }
                 )
-            with self.http.stream("GET", url, **request_options) as response:
+            with self.http.stream("GET", url, timeout=request_timeout) as response:
                 if response.status_code >= 400:
                     check_status(
                         httpx.Response(
