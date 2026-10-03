@@ -155,9 +155,15 @@ def download_record(
             elif isinstance(exc, ChallengeError):
                 reason = "needs a browser check"
             elif isinstance(exc, HTTPStatusError):
+                if exc.origin:
+                    host = urlsplit(exc.origin).hostname or host
                 status = re.search(r"HTTP (\d{3})", str(exc))
                 if status:
                     reason = f"returned HTTP {status[1]}"
+                    if exc.status_code == 504:
+                        reason += " (upstream timeout)"
+                    elif exc.status_code == 502:
+                        reason += " (upstream failure)"
             failures.append(f"Source {index} {reason} ({host})")
             if isinstance(exc, ChallengeError):
                 parsed = urlsplit(link.url)
@@ -234,10 +240,26 @@ def check_status(response: httpx.Response) -> None:
         if response.status_code in {401, 403, 503}:
             # Inspect a bounded body; challenge responses may use an error status.
             document(response.text[:1_000_000])
-        raise HTTPStatusError(
-            f"Server returned HTTP {response.status_code}; "
-            "check the mirror, record or access permissions."
+        code = response.status_code
+        server_failures = {
+            500: "the service failed internally",
+            502: "its upstream service failed",
+            503: "the service is temporarily unavailable",
+            504: "its upstream service timed out",
+        }
+        message = (
+            f"Server returned HTTP {code}: {server_failures[code]}. Try again later."
+            if code in server_failures
+            else f"Server returned HTTP {code}; check the mirror, record or access permissions."
         )
+        error = HTTPStatusError(message)
+        error.status_code = code
+        try:
+            target = urlsplit(str(response.url))
+            error.origin = f"{target.scheme}://{target.netloc}"
+        except RuntimeError:
+            pass  # Standalone responses may not have an attached request.
+        raise error
 
 
 def download_link(html: str, base_url: str) -> str:

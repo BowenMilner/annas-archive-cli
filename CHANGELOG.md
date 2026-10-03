@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0a10 — distinguish upstream gateway failures
+
+- Report HTTP 502 and 504 as upstream failures rather than suggesting a mirror,
+  permissions or browser-session problem. Preserve the existing HTTP error code.
+- Aggregate download errors identify the responding file host without revealing
+  signed paths or tokens.
+- A longer live request for the exact 24.8 MB file received nginx HTTP 504 after
+  61 seconds with zero bytes, while its signed link had not expired.
+- 129 deterministic tests pass. The exact archive transfer remains unresolved.
+
 ## 0.3.0a9 — recover blocked download pages across official mirrors
 
 - Include the archive-advertised `.pk` mirror after `.gd` and `.gl`.

@@ -291,3 +291,38 @@ response through the equivalent slow route, received HTTP 200 for the partner
 page and advanced to Contacting file server. The exact-file request then timed
 out before receiving bytes. This verifies installed page resolution with the
 complete fixes, but still does not verify the selected file transfer.
+
+
+## Longer exact-file diagnostic — 4 October 2026, 0.3.0a10
+
+A fresh page-resolution attempt was blocked by browser verification. A separate
+long request used the most recently resolved exact-file URL, generated roughly
+12 minutes earlier on the unchanged network. Its embedded expiry was still in
+the future. With a 180-second first-response allowance, asuycdg6.org returned
+HTTP 504 from nginx after 61.2 seconds, with zero file bytes. Anna's short read
+timeout was therefore not the only reason that this observed request failed.
+No saved ebook, desktop interaction or network-setting change resulted.
+
+The archive's public [slow-download implementation](https://software.annas-archive.gl/AnnaArchivist/annas-archive/-/blob/main/allthethings/page/views.py)
+requests clearance from within seven minutes. Its public
+[session and signing utilities](https://software.annas-archive.gl/AnnaArchivist/annas-archive/-/blob/main/allthethings/utils.py)
+renew the paired clearance/check cookies when stale and generate signed URLs
+with two-hour expiry. This published main-branch code is not proof of the exact
+version deployed on each live mirror, but explains why cookie-file expiry alone
+cannot guarantee permanent browser clearance. Signed links were not edited,
+re-signed or redirected to unadvertised services.
+
+HTTP 502/504 messages now describe upstream failures and report the responding
+file host in source summaries, without exposing signed paths or query tokens.
+129 deterministic tests, Ruff and application type checks pass. The live exact
+large-file transfer still has not completed.
+
+
+The archive-advertised direct HTTP counterpart (`45.3.63.27:6060`) was also
+compared using the documented domain-signature mapping, keeping the signed path
+and checksum unchanged. It returned nginx HTTP 504 after 60.8 seconds. This
+observed failure was therefore not recovered by bypassing the HTTPS gateway.
+The separate advertised alternate-backend route was then tested once; its partner
+page required browser verification, so no alternate file transfer was established.
+Expired previously saved URLs were inspected but not requested. No rate-limit
+response was routed around, network settings changed or desktop interaction used.

@@ -31,6 +31,8 @@ class RateLimitError(AnnaError):
 
 
 class HTTPStatusError(AnnaError):
+    status_code: int | None = None
+
     code = "http_error"
 
 
