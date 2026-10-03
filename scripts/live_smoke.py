@@ -23,8 +23,22 @@ def main():
         help="Inspect and download the exact record without search ranking.",
     )
     parser.add_argument("--source", type=int, help="One listed source to isolate during diagnosis.")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=60,
+        help="HTTP inactivity timeout for upstream diagnostics.",
+    )
     args = parser.parse_args()
-    command = [sys.executable, "-m", "anna", "--base-url", args.base_url, "--timeout", "60"]
+    command = [
+        sys.executable,
+        "-m",
+        "anna",
+        "--base-url",
+        args.base_url,
+        "--timeout",
+        str(args.timeout),
+    ]
 
     with tempfile.TemporaryDirectory(prefix="anna-live-") as directory:
 

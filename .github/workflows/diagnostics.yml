@@ -47,5 +47,5 @@ jobs:
           if [[ -n "$DIAGNOSTIC_SOURCE" ]]; then
             source_args=(--source "$DIAGNOSTIC_SOURCE")
           fi
-          uv run --frozen --no-dev python scripts/live_smoke.py --base-url "$ANNA_BASE_URL" --md5 "$DIAGNOSTIC_MD5" --record-only "${source_args[@]}"
+          uv run --frozen --no-dev python scripts/live_smoke.py --base-url "$ANNA_BASE_URL" --md5 "$DIAGNOSTIC_MD5" --record-only --timeout 180 "${source_args[@]}"
 
