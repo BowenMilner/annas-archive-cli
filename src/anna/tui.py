@@ -173,17 +173,26 @@ class EditionPane(VerticalScroll):
         yield Label("", id="book-statistics", classes="statistics")
         yield Label("", id="book-publisher")
         yield Label("", id="book-metadata")
-        yield Label("", id="book-description")
         yield Label("", id="book-destination", classes="muted")
         yield Label("", id="book-error", classes="error")
-        yield Button("Download selected file", id="download-book", variant="primary", disabled=True)
         yield Label("", id="official-status", classes="muted")
-        yield Button("Download official Gutenberg edition", id="official-download", disabled=True)
+        yield Button(
+            "Download official EPUB", id="official-download", variant="primary", disabled=True
+        )
+        yield Button("Download archive file", id="download-book", variant="primary", disabled=True)
+        yield Label("", id="book-description")
 
     def on_mount(self):
         self.query_one("#official-download", Button).display = False
+        self.query_one("#download-book", Button).display = False
+        for label in self.query(Label):
+            if label.id and label.id != "book-title":
+                label.display = False
 
     def show_book(self, book, directory, statistics=None):
+        for label in self.query(Label):
+            label.display = True
+        self.query_one("#download-book", Button).display = bool(book.md5 or book.source_id)
         self.query_one("#book-title", Label).update(Text(book.title))
         self.query_one("#book-author", Label).update(Text(book.author or "Unknown author"))
         self.query_one("#book-publisher", Label).update(Text(book.publisher))
@@ -216,6 +225,9 @@ class EditionPane(VerticalScroll):
         button = self.query_one("#official-download", Button)
         button.display = book is not None
         button.disabled = book is None
+        archive = self.query_one("#download-book", Button)
+        archive.label = "Try archive sources" if book is not None else "Download archive file"
+        archive.variant = "default" if book is not None else "primary"
         label = self.query_one("#official-status", Label)
         if book is None:
             label.update("")
@@ -656,7 +668,7 @@ class AnnaApp(App):
     .muted { color: $text-muted; margin-top: 1; }
     #book-description { margin: 1 0; }
     #download-book { margin-top: 1; }
-    EditionPane Button { height: 1; }
+    EditionPane Button { height: 3; }
     #official-download { margin-top: 1; }
     .actions { height: auto; margin-top: 1; }
     .actions Button { margin-right: 1; }
@@ -667,11 +679,17 @@ class AnnaApp(App):
     #download-panel .heading { margin: 0; color: $accent; }
     #progress { margin: 0; }
     #download-status { height: auto; }
-    Input, Select { border: none; background: $panel; }
-    Input:focus { border: none; background: $primary; }
-    Button { border: none; background: $panel; }
-    Button:focus { text-style: bold reverse; }
-    #download-panel Button { height: 1; margin: 0; }
+    Input { height: 3; border: solid $primary; background: $panel; padding: 0 1; }
+    Select { height: 3; border: none; background: $panel; }
+    SelectCurrent { border: solid $primary; background: $panel; }
+    Input:focus { border: solid $accent; background: $panel; }
+    Button { height: 3; border: round $accent; background: $panel;
+             content-align: center middle; text-style: bold; }
+    Button.-primary { background: $primary; }
+    Button:hover, Button:focus { background: $primary; border: round $secondary; }
+    Button:disabled { border: round $primary; color: $text-muted; text-style: none; }
+    #download-panel Button { height: 3; margin: 0; }
+    #cancel-download { min-width: 24; }
     Footer { background: $panel; }
     """
 
@@ -970,6 +988,16 @@ class AnnaApp(App):
     @on(OptionList.OptionSelected, "#results")
     def open_book(self, event):
         if event.option_index < len(self.books):
+            if not self.screen.has_class("compact"):
+                # The preview already contains the selected edition's details.
+                pane = self.query_one("#preview", EditionPane)
+                official = pane.query_one("#official-download", Button)
+                (
+                    official
+                    if official.display and not official.disabled
+                    else pane.query_one("#download-book", Button)
+                ).focus()
+                return
             self.push_screen(
                 BookScreen(
                     self.books[event.option_index],

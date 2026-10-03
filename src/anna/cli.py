@@ -100,9 +100,7 @@ def main(ctx, base_url, cookies, user_agent, timeout, json_output):
             raise click.UsageError(
                 "The book browser needs a terminal. Use anna --help for commands."
             )
-        from anna.tui import AnnaApp
-
-        AnnaApp(ctx.obj["client_options"], ctx.obj["preferences"]).run()
+        launch_browser(ctx.obj["client_options"], ctx.obj["preferences"])
 
 
 def json_option(function):
@@ -120,9 +118,22 @@ def connect(ctx):
     """Open guided browser verification and remember this site's session."""
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise click.UsageError("Browser setup needs a terminal. Run anna connect interactively.")
+    launch_browser(ctx.obj["client_options"], ctx.obj["preferences"], connect_only=True)
+
+
+def launch_browser(options, preferences, connect_only=False):
     from anna.tui import AnnaApp
 
-    AnnaApp(ctx.obj["client_options"], ctx.obj["preferences"], connect_only=True).run()
+    # Colour fractional-cell terminal margins during the app, then restore the
+    # emulator's configured background when returning to the shell.
+    terminal = sys.stdout.isatty()
+    if terminal:
+        click.echo("\x1b]11;#11171f\x1b\\", nl=False)
+    try:
+        AnnaApp(options, preferences, connect_only=connect_only).run()
+    finally:
+        if terminal:
+            click.echo("\x1b]111\x1b\\", nl=False)
 
 
 def emit(value):

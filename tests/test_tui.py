@@ -70,7 +70,7 @@ def make_app(tmp_path, fail=False, empty=False):
     )
 
 
-@pytest.mark.parametrize("size", [(80, 24), (100, 36)])
+@pytest.mark.parametrize("size", [(80, 24), (90, 36)])
 def test_keyboard_search_details_verified_download_and_return(tmp_path, size):
     async def scenario():
         app = make_app(tmp_path)
@@ -102,7 +102,7 @@ def test_keyboard_search_details_verified_download_and_return(tmp_path, size):
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("size", [(80, 24), (100, 36)])
+@pytest.mark.parametrize("size", [(80, 24), (90, 36)])
 def test_settings_keyboard_save_and_reload(tmp_path, monkeypatch, size):
     monkeypatch.setenv("ANNA_CONFIG", str(tmp_path / "preferences.json"))
 
@@ -318,7 +318,13 @@ def test_bookfinder_fills_terminal_and_adapts_while_dialog_open(tmp_path):
             await app.workers.wait_for_complete()
             assert "Pride and Prejudice" in str(app.query_one("#book-title", Label).render())
             await pilot.press("enter")
+            assert len(app.screen_stack) == 1
+            assert app.focused.id == "download-book"
+            await pilot.resize_terminal(60, 24)
+            app.query_one("#results", OptionList).focus()
+            await pilot.press("enter")
             await app.workers.wait_for_complete()
+            assert isinstance(app.screen, BookScreen)
             await pilot.resize_terminal(60, 24)
             await pilot.press("escape")
             assert app.screen.has_class("compact")
@@ -349,7 +355,7 @@ def test_failed_archive_source_offers_explicit_official_download(tmp_path, monke
             preferences={"language": "en", "format": "epub", "directory": str(tmp_path)},
             client_factory=lambda **_: backend(),
         )
-        async with app.run_test(size=(100, 36)) as pilot:
+        async with app.run_test(size=(90, 36)) as pilot:
             app.push_screen(DownloadScreen(selected(), {}, tmp_path, app.client_factory))
             await app.workers.wait_for_complete()
             await pilot.pause()
@@ -376,7 +382,7 @@ def test_browser_check_saves_session_then_retries_search(tmp_path, monkeypatch):
 
     async def scenario():
         app = make_app(tmp_path)
-        async with app.run_test(size=(100, 36)) as pilot:
+        async with app.run_test(size=(90, 36)) as pilot:
             app.query_one("#query", Input).value = "Austen"
             await pilot.press("f2")
             assert isinstance(app.screen, BrowserCheckScreen)
@@ -387,5 +393,59 @@ def test_browser_check_saves_session_then_retries_search(tmp_path, monkeypatch):
             assert len(app.screen_stack) == 1
             assert app.client_options["user_agent"] == "Firefox test agent"
             assert len(app.books) == 1
+
+    asyncio.run(scenario())
+
+
+def test_wide_selection_keeps_preview_and_download_opens_only_activity_strip(tmp_path):
+    async def scenario():
+        app = make_app(tmp_path)
+        async with app.run_test(size=(144, 40)) as pilot:
+            await pilot.press(*"Austen", "enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.3)
+            await app.workers.wait_for_complete()
+            await pilot.press("enter")
+            assert len(app.screen_stack) == 1
+            assert app.focused.id == "download-book"
+            button = app.query_one("#download-book", Button)
+            assert button.region.height == 3
+            assert button.styles.border.top[0] == "round"
+            assert app.query_one("#browser").region.x == 0
+            assert app.query_one("#browser").region.y == 0
+            assert app.query_one("Footer").region.bottom == 40
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert isinstance(app.screen, DownloadScreen)
+            assert app.screen.query_one("#download-panel").region.height < 20
+            assert app.screen_stack[0].query_one("#preview").display
+            assert (tmp_path / "book.epub").read_bytes() == DATA
+
+    asyncio.run(scenario())
+
+
+def test_official_download_is_the_prominent_preview_action(tmp_path, monkeypatch):
+    from test_gutenberg import backend, find_edition, selected
+
+    with backend() as client:
+        official = find_edition(client, selected())
+    monkeypatch.setattr("anna.tui.lookup_official", lambda *_: official)
+
+    async def scenario():
+        app = make_app(tmp_path)
+        async with app.run_test(size=(144, 40)) as pilot:
+            await pilot.press(*"Austen", "enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.3)
+            await app.workers.wait_for_complete()
+            await pilot.press("enter")
+            assert len(app.screen_stack) == 1
+            assert app.focused.id == "official-download"
+            assert app.focused.variant == "primary"
+            archive = app.query_one("#download-book", Button)
+            assert str(archive.label) == "Try archive sources"
+            assert archive.variant == "default"
+            assert app.focused.region.bottom < archive.region.y
 
     asyncio.run(scenario())

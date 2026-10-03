@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0a4 — controls and direct preview actions
+
+- Give buttons clear outlines, centred labels and visible hover/focus states.
+- Keep wide-screen result selection in the existing preview instead of opening
+  duplicate full-screen details. Downloads use the compact activity strip.
+- Put a matching official EPUB first and label the original route Try archive sources.
+- Match terminal margin colour during the app and restore it on exit; retain
+  narrow-screen details navigation.
+
+
 ## 0.3.0a3 — Bookfinder and browser sessions
 
 - Make Bookfinder the default: full-terminal results and an adaptive edition preview,
