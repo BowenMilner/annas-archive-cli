@@ -166,8 +166,8 @@ Live connections to the file hosts succeeded quickly, but signed file transfers
 from multiple hosts timed out before response headers. A longer earlier request
 returned HTTP 504; a later request returned a rate-limit response. The real
 Firefox partner download page passed its browser check and warned of heavy
-activity from the current IP; opening its exact file link did not establish a
-successful transfer. Further network probes were stopped after the rate limit.
+activity from the current IP; opening its exact file link subsequently returned 504 Gateway Time-out
+in Firefox too. No successful transfer was established. Further network probes were stopped after the rate limit.
 No transfer of this exact archive record is claimed. The VPN was left unchanged.
 
 Validation: 106 deterministic tests passed, as did Ruff and application type
