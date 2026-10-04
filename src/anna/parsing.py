@@ -1,6 +1,7 @@
 """HTML adapters for the public list and record pages; no JavaScript execution."""
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import TypedDict
 from urllib.parse import urljoin, urlsplit
@@ -37,6 +38,7 @@ class Book:
     source: str = "anna"
     source_id: str = ""
     downloads: int | None = None
+    filename: str = ""
 
 
 def record_id(value: str) -> str:
@@ -115,6 +117,30 @@ def metadata_fields(value: str) -> Metadata:
     }
 
 
+def catalogue_filename(node):
+    for filename_node in node.select(".font-mono"):
+        value = text(filename_node).replace("\\", "/").rsplit("/", 1)[-1].strip()
+        if re.search(r"\.(?:epub|pdf|mobi|azw3?|djvu?|txt|cb[rz]|fb2|zip)$", value, re.I):
+            return value
+    return ""
+
+
+def exact_matches(book, query):
+    """Match every whole word/number within one title or advertised filename."""
+
+    def tokens(value):
+        value = unicodedata.normalize("NFKC", value).casefold()
+        return set(re.findall(r"[^\W\d_]+|\d+", value))
+
+    wanted = tokens(query)
+    return bool(wanted) and any(wanted <= tokens(value) for value in (book.title, book.filename))
+
+
+def downloads_key(book, statistics):
+    count = statistics.get(book.md5, {}).get("downloads_total")
+    return (count is None, -(count or 0))
+
+
 def parse_search(html: str, base_url: str) -> list[Book]:
     soup = document(html)
     books: dict[str, Book] = {}
@@ -135,6 +161,7 @@ def parse_search(html: str, base_url: str) -> list[Book]:
             books[md5] = Book(
                 md5=md5,
                 title=text(anchor),
+                filename=catalogue_filename(card),
                 url=urljoin(base_url, f"/md5/{md5}"),
                 author=icon_link(details, "mdi--user-edit"),
                 publisher=icon_link(details, "mdi--company"),
@@ -156,6 +183,7 @@ def parse_search(html: str, base_url: str) -> list[Book]:
         books[md5] = Book(
             md5=md5,
             title=text(title),
+            filename=catalogue_filename(anchor),
             url=urljoin(base_url, f"/md5/{md5}"),
             author=text(author),
             publisher=text(publisher) if publisher != author else "",
@@ -224,6 +252,7 @@ def parse_info(html: str, base_url: str, md5: str) -> Book:
         return Book(
             md5=md5,
             title=text(title),
+            filename=catalogue_filename(container),
             url=urljoin(base_url, f"/md5/{md5}"),
             author=icon_link(container, "mdi--user-edit"),
             publisher=icon_link(container, "mdi--company"),
@@ -245,6 +274,7 @@ def parse_info(html: str, base_url: str, md5: str) -> Book:
     return Book(
         md5=md5,
         title=text(title),
+        filename=catalogue_filename(soup),
         url=urljoin(base_url, f"/md5/{md5}"),
         author=text(author),
         publisher=text(publisher),

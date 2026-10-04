@@ -11,9 +11,9 @@ import httpx
 from anna import __version__
 from anna.client import DEFAULT_USER_AGENT, Client, download_record
 from anna.config import KEYS, config_path, load_config, save_config
-from anna.errors import AnnaError
+from anna.errors import AnnaError, ChallengeError, RateLimitError
 from anna.library import history as download_history
-from anna.parsing import author_matches, record_id
+from anna.parsing import author_matches, downloads_key, exact_matches, record_id
 
 
 class ErrorGroup(click.Group):
@@ -223,7 +223,16 @@ class DownloadProgress:
 @click.option(
     "--sort",
     type=click.Choice(
-        ["relevance", "newest", "oldest", "largest", "smallest", "newest_added", "oldest_added"]
+        [
+            "relevance",
+            "newest",
+            "oldest",
+            "largest",
+            "smallest",
+            "newest_added",
+            "oldest_added",
+            "downloads",
+        ]
     ),
     default="relevance",
     show_default=True,
@@ -236,10 +245,15 @@ class DownloadProgress:
     show_default=True,
     help="Maximum records from this page; does not fetch additional pages.",
 )
+@click.option(
+    "--exact",
+    is_flag=True,
+    help="Match every whole query word/number in the title or original filename.",
+)
 @click.option("--select/--no-select", default=None, help="Choose a result to download.")
 @json_option
 @click.pass_context
-def search(ctx, query, lang, ext, content, sort, page, limit, select, json_output):
+def search(ctx, query, lang, ext, content, sort, page, limit, exact, select, json_output):
     """Search by title, author, ISBN or keywords."""
     with prepare(ctx, json_output) as client:
         preferences = ctx.obj["preferences"]
@@ -248,9 +262,23 @@ def search(ctx, query, lang, ext, content, sort, page, limit, select, json_outpu
             lang=lang or (preferences["language"],),
             ext=ext or (preferences["format"],),
             content=content,
-            sort="" if sort == "relevance" else sort,
+            sort="" if sort in {"relevance", "downloads"} else sort,
             page=page,
-        )[:limit]
+        )
+        if exact:
+            books = [book for book in books if exact_matches(book, " ".join(query))]
+        if sort == "downloads":
+            statistics = {}
+            for book in books:
+                try:
+                    statistics[book.md5] = client.statistics(book.md5)
+                except (RateLimitError, ChallengeError):
+                    raise
+                except (AnnaError, httpx.HTTPError, ValueError):
+                    statistics[book.md5] = {}
+                book.downloads = statistics[book.md5].get("downloads_total")
+            books.sort(key=lambda book: downloads_key(book, statistics))
+        books = books[:limit]
     if ctx.obj["json"]:
         emit([asdict(book) for book in books])
     elif not books:
@@ -260,6 +288,12 @@ def search(ctx, query, lang, ext, content, sort, page, limit, select, json_outpu
         for i, book in enumerate(books, 1):
             click.echo(f"{i}. {book.title}")
             click.echo(f"   {book.author or 'Unknown author'} | {book.metadata}")
+            if sort == "downloads":
+                click.echo(
+                    f"   {book.downloads:,} downloads"
+                    if book.downloads is not None
+                    else "   Download count unavailable"
+                )
             click.echo(f"   {book.url}")
         if select is True or (select is None and input_is_terminal()):
             chosen = choose_book(books, None, ctx.obj["json"])

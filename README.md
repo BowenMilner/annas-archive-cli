@@ -50,16 +50,31 @@ anna
 
 Enter a title, optionally enter an author, and press Enter. English and EPUB are
 selected initially. Change the format dropdown or language field before searching.
-Sort by relevance, file size, publication date or recently added records.
-Edition details and statistics are preloaded for each page before browsing, with
-visible loading progress. Moving between results and opening their details reuses
-the cache. Previously loaded editions are reused when sorting or loading more.
-Preloading stops on a rate limit or browser check; other detail failures leave the
-search results available. Requests are capped at ten seconds and preloading has a
-45-second scheduling budget. Search again to retry unavailable details. Optional
-Gutenberg alternatives are still checked separately in the background.
+Sort by relevance, file size, publication date, recently added records or **Most downloaded**.
+Search results appear immediately after the catalogue search, with titles, authors
+and file metadata. Edition details and statistics then fetch in the background,
+updating rows and the preview without blocking navigation. The highlighted book is
+prioritised for the next request. Narrow details views update when their data arrives.
+Successfully loaded metadata stays cached for the session. Search changes cancel old
+background work; stale responses cannot replace the current results. Background
+requests are capped at ten seconds and stop on a rate limit or browser check.
+Search again to retry unavailable details. Optional Gutenberg alternatives are still
+checked separately in the background.
 
-Changing the sort or format reruns the search with the current title and author.
+**Exact terms** requires every query word and number to occur in a title or advertised
+original filename, ignoring case and separators. `Series 13` matches volume 13 and
+`Series_Vol.13.epub`, but not volume 12 or 130. It is whole-term matching, not a
+character-for-character filename comparison. Original filenames are shown in the
+preview when the catalogue supplies them. Missing filenames are not invented.
+The CLI provides the same filter with `--exact`.
+
+**Most downloaded** sorts the editions you have loaded by Anna's download totals,
+updating the order as counts arrive and keeping your highlighted edition selected.
+Missing counts appear last. Use Load more to include additional pages; this is not
+a catalogue-wide popularity ranking. Popularity does not establish file quality:
+inspect the edition's metadata and reported issues too.
+
+Changing format or a catalogue sort reruns the search with the current title and author.
 Choose **Load more** to fetch the next page without losing your filters or selection;
 repeated records are removed. A failed page can be retried with the same button.
 An author filter can hide every match on a page: Load more still searches subsequent
@@ -108,6 +123,7 @@ anna get "Frankenstein" --author "Mary Shelley" --format epub
 anna get "Pride and Prejudice" --author "Jane Austen" -d ./reading
 anna search "Jane Austen"
 anna search "Jane Austen" --no-select
+anna search "Series 13" --exact --sort downloads --no-select
 ```
 
 Both search and get default to English EPUBs. Explicit `--lang`, `--ext` (search)

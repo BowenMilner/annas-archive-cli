@@ -1,3 +1,16 @@
+# Bookfinder 0.3.0a12
+
+Search results appear as soon as the catalogue returns them. Background loading then
+adds edition details/statistics without holding back the list. Highlighted books get
+the next request; narrow details views share the same pending fetch. New searches
+cancel older work, and late responses cannot change the current results.
+
+Exact terms optionally filters titles and advertised filenames using whole query
+words/numbers. Series 13 does not match volume 12 or 130. Most downloaded ranks the
+loaded editions as counts arrive, keeps the selected edition and places unavailable
+counts last. Popularity does not guarantee quality. CLI equivalents are `--exact`
+and `--sort downloads` on `anna search`.
+
 # Bookfinder 0.3.0a11
 
 Page details and statistics preload with visible progress, then stay cached as you

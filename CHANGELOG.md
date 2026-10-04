@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0a12 — results first, background details
+
+- Show search results immediately, then fetch details/statistics in the background.
+  Prioritise the highlighted edition, update rows/previews in place, share pending
+  requests with narrow details views, and ignore stale responses after a new search.
+- Add optional Exact terms matching for titles and original filenames; query numbers
+  match whole tokens so volume 13 does not return volume 12 or 130. Add CLI `--exact`.
+- Add Most downloaded sorting across loaded editions with missing counts last and
+  stable selected-book identity while counts arrive. Add CLI `--sort downloads`.
+- Parse and show catalogue filenames without inventing missing metadata.
+
 ## 0.3.0a11 — search further and keep your downloads
 
 - Add Bookfinder sorting and Load more, retaining filters and selection, removing
