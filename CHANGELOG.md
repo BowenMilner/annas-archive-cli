@@ -1,5 +1,108 @@
 # Changelog
 
+## 0.3.0a10 — distinguish upstream gateway failures
+
+- Report HTTP 502 and 504 as upstream failures rather than suggesting a mirror,
+  permissions or browser-session problem. Preserve the existing HTTP error code.
+- Aggregate download errors identify the responding file host without revealing
+  signed paths or tokens.
+- A longer live request for the exact 24.8 MB file received nginx HTTP 504 after
+  61 seconds with zero bytes, while its signed link had not expired.
+- 129 deterministic tests pass. The exact archive transfer remains unresolved.
+
+## 0.3.0a9 — recover blocked download pages across official mirrors
+
+- Include the archive-advertised `.pk` mirror after `.gd` and `.gl`.
+- Apply automatic mirror recovery to public slow-download pages, not just search
+  and details. Keep the exact MD5 and route index and remember a working page
+  mirror even if its separate file server times out. Later routes use that mirror.
+- Explicit mirrors, explicit source selections, query-bearing routes and signed
+  external file links remain pinned. Rate limits stop requests without fallback.
+- Keep server-renewed cookies in memory between catalogue and download requests,
+  rather than overwriting them by reloading an older saved session on every hop.
+- Guided session checks now use the same bounded equivalent-route retry as the
+  downloader, instead of rejecting a session that that retry can use.
+- 126 deterministic tests pass. Live `.pk` catalogue and countdown pages worked
+  for the exact 24.8 MB record, but fresh file-server requests still timed out.
+
+## 0.3.0a8 — check browser-session reuse before retrying
+
+- Validate imported sessions against the exact challenged page before reporting
+  success or retrying. A session rejected by the site stays in guided setup with
+  a clear explanation, rather than restarting the failed transfer.
+- Preserve imported browser cookies when HTTP verification fails; only sessions
+  used successfully may update the saved cache.
+- Skip remaining slow routes behind an already observed mirror verification
+  block, while still trying independent HTTP sources for the same edition.
+- 117 deterministic tests pass. The exact 24.8 MB Austen archive transfer remains
+  unresolved; these fixes do not establish a successful live download.
+
+## 0.3.0a7 — preserve signed-link browser identity
+
+- Keep the browser identity used to obtain a signed download link when contacting
+  its file server, unless that server has its own saved session. Cookies remain
+  scoped to their own domains; explicit browser-identity overrides remain respected.
+- F2 opens the exact download page that requested verification, rather than only
+  the mirror home page. Reject cross-origin verification targets.
+- Add regressions for identity-bound file links and exact-page browser setup.
+- No peer-to-peer download support has been added. The reported 24.8 MB record's
+  HTTP transfer remains unverified while browser verification is stalled.
+
+## 0.3.0a6 — bound stalled download retries
+
+- Give automatic source retries a shared 90-second network budget and cap each
+  request's timeout at the remaining budget; exclude advertised queue countdowns.
+- Stop with an explicit attempted-route count when that budget is exhausted.
+- Call the numbered options download routes rather than implying independent servers.
+- Show the transfer bar only after receiving file bytes.
+- The reported 24.8 MB archive download remains unverified: its exact file link
+  returned HTTP 504 in verified Firefox. This release does not claim to repair
+  remote file-server availability.
+
+## 0.3.0a5 — Firefox session import and archive source recovery
+
+- Read site-scoped cookies even when running Firefox exclusively locks its database,
+  including committed WAL data, using a private temporary snapshot.
+- Try up to sixteen listed free sources for the exact selected archive record;
+  continue after an over-budget queue and report HTTP failures more clearly.
+- Keep Download archive file as the primary action when an official alternative exists.
+- Add regression coverage for live database locks, later working sources and queue fallback.
+
+## 0.3.0a4 — controls and direct preview actions
+
+- Give buttons clear outlines, centred labels and visible hover/focus states.
+- Keep wide-screen result selection in the existing preview instead of opening
+  duplicate full-screen details. Downloads use the compact activity strip.
+- Put a matching official EPUB first and label the original route Try archive sources.
+- Match terminal margin colour during the app and restore it on exit; retain
+  narrow-screen details navigation.
+
+
+## 0.3.0a3 — Bookfinder and browser sessions
+
+- Make Bookfinder the default: full-terminal results and an adaptive edition preview,
+  with descriptions, publisher, honest download statistics and contextual controls.
+- Add an explicit official Project Gutenberg EPUB alternative when title, author,
+  language and public-domain metadata match; verify the EPUB before publication.
+- Add F2 browser setup and `anna connect`: reuse a site-scoped default Linux Firefox
+  session or import a session file once, remembering cookies, identity and mirror.
+- Preserve existing commands, bounded recovery, cancellation, atomic no-overwrite
+  downloads and catalogue checksums.
+
+
+## 0.3.0a2 — download recovery
+
+- Prefer the record's listed direct Libgen file source before slow partner queues.
+- Retry alternative free sources after connection failures or unusable download pages,
+  with a bounded attempt count and one shared countdown budget.
+- Recognise observed copy-only download controls and prefer explicitly advertised
+  short-filename links; no verification scripts are executed.
+- Show the current source and network stage, and distinguish file-source timeouts
+  from a generic connection failure.
+- Reset byte progress between sources and retain checksum, no-overwrite, rate-limit
+  and cancellation protections. Explicit `--source` remains pinned.
+
+
 ## 0.3.0a1 — terminal book browser
 
 - Launch a Textual TUI with bare `anna`: searchable results, edition details,

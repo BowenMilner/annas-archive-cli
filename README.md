@@ -1,4 +1,4 @@
-# Anna — a terminal book browser
+# Anna — Bookfinder
 
 Run `anna` to search, browse editions and download books without copying hashes or
 choosing mirrors. This independent fork reuses the Python backend from
@@ -10,7 +10,9 @@ It stays responsive while network work runs in the background.
 
 ![Terminal book browser](docs/tui-results.svg)
 
-Preview shown with example fixture data.
+Bookfinder fills the terminal cell grid. If your terminal adds pixel padding
+around that grid, set its padding to zero for a window-edge layout. On wider screens, highlighted editions have a live
+details pane; smaller terminals use a full-width details view.
 
 Use it only for public-domain books or files you are otherwise entitled to download.
 Catalogue metadata does **not** establish copyright status: check the specific
@@ -54,18 +56,22 @@ Author filtering recognises surname-first records such as “Austen, Jane”.
 | --- | --- |
 | Enter in a search field | Search |
 | ↑ / ↓ in results | Move between editions |
-| Enter on a result | Open details |
+| Enter on a result | Focus Download in the wide preview; open details on small screens |
 | Tab / Shift+Tab | Move between controls |
 | / from results | Return to search |
 | Ctrl+S or Settings button | Edit saved preferences |
+| F2 | Guided browser check and saved session |
 | Escape in a dialog | Go back; cancel an active download |
 | q outside text fields / Ctrl+Q anywhere | Quit; cancel first if a download is active |
 
-The details view includes the description, file metadata and destination folder.
+The details view includes the description, publisher, file metadata and destination
+folder. Download totals, list counts and reported issues are fetched from Anna
+when available. Missing statistics are labelled unavailable, never invented.
 Choose Download to save the selected edition. Real byte progress is shown;
 a percentage appears only when the server supplies a reliable file length.
 Unknown lengths use an activity indicator rather than an invented percentage.
-Free-source countdowns are displayed while waiting.
+Free-source countdowns are displayed while waiting. If a file server fails, the
+interface shows the next source attempt and resets progress for that source.
 
 Cancel removes unfinished files. An in-flight network operation may need to finish
 or reach its timeout before cancellation completes. The results remain available
@@ -155,8 +161,17 @@ saved language/format defaults and prompts in a terminal; use explicit filters a
 `--no-select` when adapting existing scripts.
 
 `--source` chooses the one-based source from `links`; otherwise download uses the
-first non-fast HTTP source. It does not automatically switch download sources.
-Free-source countdowns are honoured for up to 300 seconds; `--max-wait 0` fails
+listed Libgen file source when available, followed by free partner sources.
+Without an explicit `--source`, up to sixteen listed free HTTP sources are tried
+after connection failures, access errors, over-budget queues or unusable download pages. Checksum failures,
+existing files, cancellation and rate limits stop the operation.
+Listed routes can be aliases of the same file server; their number does not imply
+independent working servers. Automatic retries share a 90-second network budget,
+with each request’s timeout limited to what remains. Queue countdowns have their
+own shared budget, and a successful streaming transfer can take longer than 90 seconds.
+Explicit `--source` downloads retain the configured network timeout.
+
+Source attempts share a 300-second countdown budget; `--max-wait 0` fails
 immediately, and `--max-wait 600` permits a longer wait. Ctrl+C cancels.
 
 Record downloads verify the catalogue MD5. Downloads are streamed to temporary files
@@ -165,17 +180,81 @@ HTML/JSON/XML responses, length mismatches and checksum failures are rejected.
 Temporary files are removed on error or interruption. The destination filesystem
 must support hard links. There is no resume support.
 
+## Browser checks without repeated exports
+
+If a site asks for verification, press **F2**, choose **Open Firefox**, finish its
+check in Firefox, then return and choose **Use Firefox session**. For a failed
+download, Open Firefox opens the precise page that requested the check. Anna saves only
+that site's cookies and matching browser identity, checks whether it can open that
+page, then retries your last action only if the check succeeds. If the website
+accepts Firefox but rejects Anna with the same cookies, setup explains this and
+does not automatically restart the blocked download. Cookie import alone is not
+proof that the site's verification can be reused outside the browser.
+Signed file links retain that browser identity when followed, without sending
+the catalogue’s cookies to another domain.
+You can also start this setup directly:
+
+```sh
+anna connect
+```
+
+If Firefox locks its database while running, Anna uses a private temporary snapshot
+and removes it immediately after querying this site’s cookies. You can keep Firefox open.
+
+Automatic import currently supports the default Linux Firefox profile, outside
+private windows and containers. Another browser, a customised User-Agent or a
+non-standard profile can use the Advanced session-file option: import a Netscape
+export once, with that browser's User-Agent. Subsequent launches reuse it.
+
+Sessions live separately under the config folder's `sessions/` directory, with
+owner-only files. Unrelated sites' cookies are excluded. Delete that directory to
+forget saved sessions and mirror preferences. No browser passwords are read.
+The website can require another check after expiry, network/IP changes or changed
+browser settings; Anna cannot guarantee permanent clearance or solve the check.
+The site can require fresh verification before a cookie's normal expiry; keeping
+the cookie file does not extend the site's clearance period.
+Blocked HTTP responses do not overwrite the saved browser session. Server-renewed
+cookies also survive the move from catalogue to download within the same run. Remaining slow
+routes behind the same verification block are skipped; independent HTTP sources
+for the selected edition remain eligible.
+
+## Official public-domain alternatives
+
+For matching English EPUB titles and authors, Bookfinder checks Project Gutenberg
+for an official public-domain record and its advertised illustrated EPUB. Choose
+**Download official EPUB** to download that separately labelled
+edition, including after archive sources fail. **Download archive file** remains the
+primary action and verifies the exact selected record’s MD5. The official alternative
+is never selected silently.
+
+Gutenberg's download count is labelled **last 30 days**; Anna's count belongs to
+the selected Anna record. The official EPUB is checked for length, EPUB mimetype
+and archive integrity before saving as `gutenberg-<id>-illustrated.epub`. It has
+its own identity and is not compared with a different Anna edition's MD5.
+Official public-domain metadata refers to the USA; check your jurisdiction and
+the specific edition. Availability and matching are not guaranteed.
+
 ## Advanced connection options
 
-By default, Anna tries `.gd` first and falls back to `.gl` for connection failures,
+By default, Anna tries the last successful mirror, or `.gd` first, then `.gl` and
+`.pk`, for connection failures,
 blocked pages, HTTP errors or unrecognised layouts. If `.gl` is tried first and
 blocked, automatic selection can fall back to `.gd`. A successful mirror is reused
-within that client session. An HTTP 200 parking page is not accepted as a working
+across launches. An HTTP 200 parking page is not accepted as a working
 mirror. Genuine empty results do not trigger fallback.
+
+Blocked public slow-download pages also try the other advertised mirrors while
+keeping the exact selected MD5 and route index. Once a page works, later routes
+use that mirror. Explicit mirrors and source selections stay pinned; query-bearing
+routes and signed external file URLs are never copied to another mirror. A working
+catalogue or countdown page does not guarantee that its file server is available.
+HTTP 502/504 errors identify an upstream service failure; importing browser
+cookies again does not repair that file server.
 
 A rate limit stops the request and asks you to try later. The CLI does not route
 round it. Mirror availability changes; deterministic tests are independent of live
-availability. No automatic mirror health is persisted between commands.
+availability. A successful mirror is remembered; saved sessions stay scoped to
+their original site.
 
 Pin a verified mirror only when needed:
 
@@ -213,7 +292,8 @@ Configuration commands produce human-readable output.
 {"error":{"code":"operation_failed","type":"AnnaError","message":"No working mirror found..."}}
 ```
 
-Existing error codes and JSON fields are preserved; cancellation adds `download_cancelled`. English error messages are not
+Existing error codes and JSON fields are preserved; new codes include `download_cancelled`, `download_page_unavailable` and
+`download_sources_unavailable`. English error messages are not
 stable APIs. Mirror exhaustion reports the failure categories and recovery options;
 a pinned mirror retains the original detailed error.
 

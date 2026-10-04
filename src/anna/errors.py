@@ -1,4 +1,6 @@
 class AnnaError(Exception):
+    origin: str | None = None
+    verification_url: str | None = None
     """An actionable error safe to display without a traceback."""
 
     code = "operation_failed"
@@ -29,6 +31,8 @@ class RateLimitError(AnnaError):
 
 
 class HTTPStatusError(AnnaError):
+    status_code: int | None = None
+
     code = "http_error"
 
 
@@ -44,3 +48,11 @@ class DownloadWaitError(AnnaError):
 
 class DownloadCancelledError(AnnaError):
     code = "download_cancelled"
+
+
+class DownloadSourcesError(AnnaError):
+    code = "download_sources_unavailable"
+
+
+class DownloadPageError(AnnaError):
+    code = "download_page_unavailable"

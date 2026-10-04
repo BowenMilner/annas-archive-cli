@@ -9,7 +9,7 @@ import click
 import httpx
 
 from anna import __version__
-from anna.client import DEFAULT_USER_AGENT, Client
+from anna.client import DEFAULT_USER_AGENT, Client, download_record
 from anna.config import KEYS, config_path, load_config, save_config
 from anna.errors import AnnaError
 from anna.parsing import author_matches, record_id
@@ -100,9 +100,7 @@ def main(ctx, base_url, cookies, user_agent, timeout, json_output):
             raise click.UsageError(
                 "The book browser needs a terminal. Use anna --help for commands."
             )
-        from anna.tui import AnnaApp
-
-        AnnaApp(ctx.obj["client_options"], ctx.obj["preferences"]).run()
+        launch_browser(ctx.obj["client_options"], ctx.obj["preferences"])
 
 
 def json_option(function):
@@ -112,6 +110,30 @@ def json_option(function):
 def prepare(ctx, json_output):
     ctx.obj["json"] = ctx.obj["json"] or json_output
     return Client(**ctx.obj["client_options"])
+
+
+@main.command()
+@click.pass_context
+def connect(ctx):
+    """Open guided browser verification and remember this site's session."""
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise click.UsageError("Browser setup needs a terminal. Run anna connect interactively.")
+    launch_browser(ctx.obj["client_options"], ctx.obj["preferences"], connect_only=True)
+
+
+def launch_browser(options, preferences, connect_only=False):
+    from anna.tui import AnnaApp
+
+    # Colour fractional-cell terminal margins during the app, then restore the
+    # emulator's configured background when returning to the shell.
+    terminal = sys.stdout.isatty()
+    if terminal:
+        click.echo("\x1b]11;#11171f\x1b\\", nl=False)
+    try:
+        AnnaApp(options, preferences, connect_only=connect_only).run()
+    finally:
+        if terminal:
+            click.echo("\x1b]111\x1b\\", nl=False)
 
 
 def emit(value):
@@ -365,41 +387,33 @@ def download(ctx, target, source, output, directory, expected_md5, max_wait, jso
             if expected_md5 and record_id(expected_md5) != md5:
                 raise AnnaError("--md5 does not match the record MD5.")
             book = client.info(md5)
-            if source:
-                if source > len(book.links):
-                    raise AnnaError(
-                        f"Record has {len(book.links)} sources; --source is out of range."
-                    )
-                link = book.links[source - 1]
-            else:
-                link = next(
-                    (
-                        x
-                        for x in book.links
-                        if x.kind != "fast" and x.url.startswith(("http://", "https://"))
-                    ),
-                    None,
-                )
-            if not link:
-                raise AnnaError(
-                    "No regular HTTP download source; use anna links to inspect available sources."
-                )
-            target, expected_md5 = link.url, md5
         elif source:
             raise AnnaError("--source requires an MD5 or record URL.")
         interactive = not ctx.obj["json"] and sys.stderr.isatty()
         progress = DownloadProgress(interactive)
         countdown = DownloadCountdown(interactive)
         try:
-            result = client.download(
-                target,
-                output,
-                directory,
-                expected_md5,
-                progress=progress,
-                max_wait=max_wait,
-                wait_progress=countdown,
-            )
+            if md5:
+                result = download_record(
+                    client,
+                    book,
+                    source=source,
+                    output=output,
+                    directory=directory,
+                    progress=progress,
+                    max_wait=max_wait,
+                    wait_progress=countdown,
+                )
+            else:
+                result = client.download(
+                    target,
+                    output=output,
+                    directory=directory,
+                    expected_md5=expected_md5,
+                    progress=progress,
+                    max_wait=max_wait,
+                    wait_progress=countdown,
+                )
         finally:
             countdown.close()
             progress.close()

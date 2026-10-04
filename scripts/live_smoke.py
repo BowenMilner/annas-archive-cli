@@ -17,8 +17,28 @@ def main():
     parser.add_argument("--base-url", default="https://annas-archive.gl")
     parser.add_argument("--query", default='"Pride and Prejudice" "Gutenberg"')
     parser.add_argument("--md5", default="51d2b22ca12a8b470b51f543298b34c9")
+    parser.add_argument(
+        "--record-only",
+        action="store_true",
+        help="Inspect and download the exact record without search ranking.",
+    )
+    parser.add_argument("--source", type=int, help="One listed source to isolate during diagnosis.")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=60,
+        help="HTTP inactivity timeout for upstream diagnostics.",
+    )
     args = parser.parse_args()
-    command = [sys.executable, "-m", "anna", "--base-url", args.base_url, "--timeout", "60"]
+    command = [
+        sys.executable,
+        "-m",
+        "anna",
+        "--base-url",
+        args.base_url,
+        "--timeout",
+        str(args.timeout),
+    ]
 
     with tempfile.TemporaryDirectory(prefix="anna-live-") as directory:
 
@@ -36,16 +56,18 @@ def main():
                 raise RuntimeError(result.stdout.strip() or result.stderr.strip())
             return json.loads(result.stdout)
 
-        books = run("search", args.query, "--lang", "en", "--ext", "epub", "--sort", "smallest")
-        book = next((book for book in books if book["md5"] == args.md5), None)
-        if book is None or not book["title"]:
-            raise RuntimeError("The expected public-domain record was not found in search.")
         info = run("info", args.md5)
         links = run("links", args.md5)
-        if info["title"] != book["title"] or not links:
-            raise RuntimeError("Record metadata or download links do not match search.")
+        if not info["title"] or not links:
+            raise RuntimeError("Record metadata or download links are missing.")
+        if not args.record_only:
+            books = run("search", args.query, "--lang", "en", "--ext", "epub", "--sort", "smallest")
+            book = next((book for book in books if book["md5"] == args.md5), None)
+            if book is None or book["title"] != info["title"]:
+                raise RuntimeError("The expected public-domain record was not found in search.")
         destination = Path(directory) / "book.epub"
-        result = run("download", args.md5, "-o", str(destination))
+        source = ["--source", str(args.source)] if args.source is not None else []
+        result = run("download", args.md5, "-o", str(destination), *source)
         data = destination.read_bytes()
         digest = hashlib.md5(data, usedforsecurity=False).hexdigest()
         if digest != args.md5 or result["md5"] != digest or result["bytes"] != len(data):
@@ -64,7 +86,9 @@ def main():
                     "md5": digest,
                     "bytes": len(data),
                     "sha256": hashlib.sha256(data).hexdigest(),
-                    "stages": ["search", "info", "links", "download", "md5", "epub_crc"],
+                    "source": args.source,
+                    "stages": ([] if args.record_only else ["search"])
+                    + ["info", "links", "download", "md5", "epub_crc"],
                 },
                 indent=2,
             )
