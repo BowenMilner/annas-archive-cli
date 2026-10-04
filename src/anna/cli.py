@@ -12,6 +12,7 @@ from anna import __version__
 from anna.client import DEFAULT_USER_AGENT, Client, download_record
 from anna.config import KEYS, config_path, load_config, save_config
 from anna.errors import AnnaError
+from anna.library import history as download_history
 from anna.parsing import author_matches, record_id
 
 
@@ -420,7 +421,14 @@ def download(ctx, target, source, output, directory, expected_md5, max_wait, jso
     if ctx.obj["json"]:
         emit(result)
     else:
-        click.echo(f"Saved: {result['path']}\nSize: {result['bytes']} bytes\nMD5: {result['md5']}")
+        prefix = (
+            "Already downloaded; checksum verified" if result.get("already_downloaded") else "Saved"
+        )
+        click.echo(
+            f"{prefix}: {result['path']}\nSize: {result['bytes']} bytes\nMD5: {result['md5']}"
+        )
+        if result.get("history_warning"):
+            click.echo("Book saved, but download history could not be updated.", err=True)
 
 
 @main.command()
@@ -506,6 +514,21 @@ def get(
         max_wait=max_wait,
         json_output=json_output,
     )
+
+
+@main.command(name="history")
+@json_option
+@click.pass_context
+def history_command(ctx, json_output):
+    """List local download receipts, newest first."""
+    records = download_history()
+    if json_output or ctx.obj["json"]:
+        emit(records)
+    elif not records:
+        click.echo("No downloads recorded yet.")
+    else:
+        for item in records:
+            click.echo(f"{item['title']} — {item['author']}\n  {item['path']}")
 
 
 @main.group()

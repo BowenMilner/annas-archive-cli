@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 
 from anna.client import check_status
 from anna.errors import IntegrityError, ParseError
+from anna.library import save_download
 from anna.parsing import Book, Link, author_matches, text
 
 ORIGIN = "https://www.gutenberg.org"
@@ -122,9 +123,6 @@ def download_edition(client, book: Book, **options):
         }
     ):
         raise ParseError("Official edition link is not a recognised Gutenberg EPUB.")
-    return client.download(
-        url,
-        output=options["directory"] / f"gutenberg-{book.source_id}-illustrated.epub",
-        file_validator=validate_epub,
-        **options,
+    return save_download(
+        book, lambda **kw: client.download(url, file_validator=validate_epub, **kw), **options
     )

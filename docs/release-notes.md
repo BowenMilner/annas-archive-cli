@@ -1,3 +1,27 @@
+# Bookfinder 0.3.0a11
+
+Page details and statistics preload with visible progress, then stay cached as you
+browse or open details. Rate limits/browser checks stop further archive preloads;
+individual failures leave results available. Optional official alternatives remain
+a separate background lookup.
+
+Search beyond the first page, sort editions by size/date/relevance, and change format
+without retyping your search. Load more keeps the current filters and selection;
+failed pages can be retried and duplicate editions are removed.
+
+History keeps local receipts for newly completed downloads. Repeated edition downloads
+recheck the existing file before reusing it. Record filenames now show author, title
+and an edition identifier; explicit output filenames and direct URL names still work.
+Open book and Show folder are available after success and from History, only when
+chosen. No background desktop windows are launched.
+
+Archive checksums, source fallback, browser session handling and no-overwrite guarantees
+remain in place. Queueing and partial-download resumption are deferred. Older downloads
+are not retrospectively imported into history. See the README for storage, JSON and
+filename compatibility details.
+
+## Historical upstream release — 0.2.0rc4
+
 Live free-source countdowns in Anna's Archive CLI 0.2.0rc4.
 
 Interactive terminals now show a `MM:SS` countdown that updates in place every

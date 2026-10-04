@@ -304,7 +304,7 @@ def test_queue_time_does_not_consume_network_retry_budget(monkeypatch, tmp_path)
                 kwargs["wait_progress"](0)
                 clock[0] += 10
                 raise httpx.ReadTimeout("no file headers")
-            return {"md5": kwargs["expected_md5"]}
+            return {"md5": kwargs["expected_md5"], "path": str(tmp_path / "book.epub"), "bytes": 1}
 
     backend = Backend()
     assert download_record(backend, record(2), retry_budget=30)["md5"] == MD5

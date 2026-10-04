@@ -10,6 +10,8 @@ It stays responsive while network work runs in the background.
 
 ![Terminal book browser](docs/tui-results.svg)
 
+*Interface screenshot uses synthetic test metadata.*
+
 Bookfinder fills the terminal cell grid. If your terminal adds pixel padding
 around that grid, set its padding to zero for a window-edge layout. On wider screens, highlighted editions have a live
 details pane; smaller terminals use a full-width details view.
@@ -26,7 +28,6 @@ With Python 3.11+ and [uv](https://docs.astral.sh/uv/):
 ```sh
 git clone https://github.com/BowenMilner/annas-archive-cli.git
 cd annas-archive-cli
-git switch feat/terminal-book-browser
 uv sync --locked
 uv run anna
 ```
@@ -49,6 +50,21 @@ anna
 
 Enter a title, optionally enter an author, and press Enter. English and EPUB are
 selected initially. Change the format dropdown or language field before searching.
+Sort by relevance, file size, publication date or recently added records.
+Edition details and statistics are preloaded for each page before browsing, with
+visible loading progress. Moving between results and opening their details reuses
+the cache. Previously loaded editions are reused when sorting or loading more.
+Preloading stops on a rate limit or browser check; other detail failures leave the
+search results available. Requests are capped at ten seconds and preloading has a
+45-second scheduling budget. Search again to retry unavailable details. Optional
+Gutenberg alternatives are still checked separately in the background.
+
+Changing the sort or format reruns the search with the current title and author.
+Choose **Load more** to fetch the next page without losing your filters or selection;
+repeated records are removed. A failed page can be retried with the same button.
+An author filter can hide every match on a page: Load more still searches subsequent
+pages until the catalogue returns an empty page.
+
 Use `*` or a blank language for all languages, and “Any format” for all formats.
 Author filtering recognises surname-first records such as “Austen, Jane”.
 
@@ -67,7 +83,9 @@ Author filtering recognises surname-first records such as “Austen, Jane”.
 The details view includes the description, publisher, file metadata and destination
 folder. Download totals, list counts and reported issues are fetched from Anna
 when available. Missing statistics are labelled unavailable, never invented.
-Choose Download to save the selected edition. Real byte progress is shown;
+Choose Download to save the selected edition. After success, choose **Open book**
+to use your default reader or **Show folder** to open its containing folder. These
+actions never run automatically. Real byte progress is shown;
 a percentage appears only when the server supplies a reliable file length.
 Unknown lengths use an activity indicator rather than an invented percentage.
 Free-source countdowns are displayed while waiting. If a file server fails, the
@@ -96,7 +114,7 @@ Both search and get default to English EPUBs. Explicit `--lang`, `--ext` (search
 or `--format` (get) override saved preferences. Author matching uses whole name
 words and accepts surname-first entries such as “Austen, Jane”. It filters the
 returned page before numbering; it does not fetch extra pages or guarantee an exact
-identity match. The default limit is 20 results.
+identity match. The CLI default limit is 20 results on one page; Bookfinder can fetch further pages.
 
 In a terminal, search lets you choose a result immediately. Use `--no-select` for
 a listing only. Redirected output and `--json` searches never prompt; `--select`
@@ -113,6 +131,40 @@ anna get "Pride and Prejudice" --author "Jane Austen" --choose 1 --json
 between runs; use a record MD5 or URL with `download` when a stable identifier matters.
 Get always requires a deliberate selection; without `--choose`, non-interactive
 and JSON calls fail clearly rather than downloading the first match.
+
+## Download history and readable filenames
+
+Choose **History** to browse local download receipts, open a saved book or show its
+folder. The CLI also provides `anna history` and `anna history --json`.
+History starts with downloads made using this release; older files are not imported.
+It records title, author, edition identity, local path, size, checksum and UTC timestamp.
+It does not store download URLs, cookies or search history. Receipts live in
+`history.sqlite3` beside your preferences, with owner-only permissions on Linux/macOS.
+Deleting that file clears history without deleting books.
+
+Record downloads now use names such as:
+
+```text
+Jane Austen — Pride and Prejudice [fb73d4fd19b0].epub
+```
+
+The short edition identifier keeps different editions distinguishable; Gutenberg
+alternatives include their own source and record identifier. Unsafe filename
+characters are removed and names are bounded. Direct file URL downloads keep their
+existing server-provided names. `-o custom.epub` always takes precedence.
+
+When you download a recorded edition again, Anna rechecks its saved file's size and
+checksum and reuses it if intact, even if your destination preference has changed.
+Missing or changed files are not accepted as duplicates. Existing files are never
+overwritten: move a damaged file aside or choose another output filename before
+retrying. An explicit `-o` or `--source` requests a fresh download. Files moved or
+renamed outside Anna cannot be found through their old receipt.
+
+JSON download results retain `path`, `bytes` and `md5`; reused files also include
+`already_downloaded: true`. A history write failure does not discard a successfully
+verified book; it produces a visible warning (or `history_warning` in JSON).
+Desktop opening uses the operating system's default application association and
+requires a working graphical session and reader/file manager.
 
 ## Remember your preferences
 
@@ -274,7 +326,7 @@ certificate environment variables, including SOCKS proxies.
 
 ## Scripting contract
 
-`search`, `get`, `info`, `links`, `download` and `doctor` accept `--json`,
+`search`, `get`, `info`, `links`, `download`, `history` and `doctor` accept `--json`,
 including the global position. Data goes to stdout; progress goes to stderr.
 JSON operational errors return an error object and status 1. Click usage errors
 remain on stderr with status 2. Empty searches return `[]` and status 0.
@@ -286,6 +338,7 @@ Configuration commands produce human-readable output.
 | info | Book record, including links |
 | links | Array of source records with index, label, url and kind |
 | get / download | Object with path, bytes and md5 |
+| history | Array of local download receipts, newest first |
 | doctor | Object with base_url, ok and results |
 
 ```json

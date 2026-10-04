@@ -31,9 +31,16 @@ from textual.worker import get_current_worker
 
 from anna.client import DEFAULT_BASE_URL, Client, download_record
 from anna.config import load_config, save_config
-from anna.errors import AnnaError, ChallengeError, DownloadCancelledError, DownloadSourcesError
+from anna.errors import (
+    AnnaError,
+    ChallengeError,
+    DownloadCancelledError,
+    DownloadSourcesError,
+    RateLimitError,
+)
 from anna.gutenberg import ORIGIN as GUTENBERG_ORIGIN
 from anna.gutenberg import download_edition, find_edition
+from anna.library import history, open_saved
 from anna.parsing import Book, author_matches
 from anna.session import import_file, import_firefox, remember_origin
 
@@ -266,6 +273,8 @@ def optional_statistics(client, book):
         return {}
     try:
         return client.statistics(book.md5)
+    except (RateLimitError, ChallengeError):
+        raise
     except (AnnaError, httpx.HTTPError, ValueError):
         return {}
 
@@ -334,8 +343,10 @@ class SettingsScreen(ResponsiveScreen):
 class BookScreen(ResponsiveScreen):
     BINDINGS = [("escape", "dismiss", "Back")]
 
-    def __init__(self, book, options, directory, client_factory):
+    def __init__(self, book, options, directory, client_factory, cached=None, preload_error=None):
         super().__init__()
+        self.cached = cached
+        self.preload_error = preload_error
         self.book = book
         self.options = dict(options)
         self.directory = directory
@@ -354,7 +365,12 @@ class BookScreen(ResponsiveScreen):
     def on_mount(self):
         self.query_one(EditionPane).show_book(self.book, self.directory)
         self.query_one("#download-book", Button).disabled = True
-        self.load_details()
+        if self.cached is not None:
+            self.show_details(*self.cached)
+        elif self.preload_error:
+            self.show_error(*self.preload_error)
+        else:
+            self.load_details()
 
     @work(thread=True, exclusive=True)
     def load_details(self):
@@ -424,6 +440,77 @@ class BookScreen(ResponsiveScreen):
             self.dismiss(self.book)
 
 
+class HistoryScreen(ResponsiveScreen):
+    BINDINGS = [("escape", "dismiss", "Back")]
+
+    def compose(self):
+        with Vertical(classes="dialog"):
+            yield Label("DOWNLOAD HISTORY", classes="heading")
+            yield OptionList(id="history-results")
+            yield Label("Loading local receipts…", id="history-status")
+            with Horizontal(classes="actions"):
+                yield Button("Open book", id="history-open", disabled=True)
+                yield Button("Show folder", id="history-folder", disabled=True)
+                yield Button("Back", id="history-back")
+
+    def on_mount(self):
+        self.receipts = []
+        self.load_history()
+
+    @work(thread=True)
+    def load_history(self):
+        worker = get_current_worker()
+        try:
+            receipts = history()
+            if not worker.is_cancelled:
+                self.app.call_from_thread(self.show_history, receipts)
+        except (AnnaError, OSError) as exc:
+            if not worker.is_cancelled:
+                self.app.call_from_thread(self.query_one("#history-status", Label).update, str(exc))
+
+    def show_history(self, receipts):
+        self.receipts = receipts
+        for item in receipts:
+            self.query_one("#history-results", OptionList).add_option(
+                Text(
+                    f"{item['title']} — {item['author']}\n"
+                    f"{item['source']} · {item['saved_at']} UTC · {item['bytes']:,} bytes\n"
+                    f"{item['path']}\n"
+                )
+            )
+        self.query_one("#history-status", Label).update(
+            "Local receipts; files are checked again before reusing a download."
+            if receipts
+            else "No downloads yet. Successfully saved editions appear here."
+        )
+        if receipts:
+            self.query_one("#history-results", OptionList).highlighted = 0
+
+    @on(OptionList.OptionHighlighted, "#history-results")
+    def highlight_receipt(self):
+        self.query_one("#history-open", Button).disabled = False
+        self.query_one("#history-folder", Button).disabled = False
+
+    @on(Button.Pressed, "#history-back")
+    def go_back(self):
+        self.dismiss()
+
+    @on(Button.Pressed, "#history-open")
+    @on(Button.Pressed, "#history-folder")
+    def launch_receipt(self, event):
+        event.stop()
+        index = self.query_one("#history-results", OptionList).highlighted
+        if index is not None and index < len(self.receipts):
+            self.launch(self.receipts[index]["path"], event.button.id == "history-folder")
+
+    @work(thread=True)
+    def launch(self, path, folder):
+        try:
+            open_saved(path, folder)
+        except AnnaError as exc:
+            self.app.call_from_thread(self.query_one("#history-status", Label).update, str(exc))
+
+
 class DownloadScreen(ResponsiveScreen):
     BINDINGS = [("escape", "cancel", "Cancel / back")]
 
@@ -433,6 +520,7 @@ class DownloadScreen(ResponsiveScreen):
         self.options = dict(options)
         self.directory = directory
         self.client_factory = client_factory
+        self.saved_path = None
         self.cancel_event = threading.Event()
         self.running = True
         self.bytes_received = 0
@@ -451,6 +539,9 @@ class DownloadScreen(ResponsiveScreen):
             yield ProgressBar(total=None, show_eta=False, id="progress")
             yield Label(Text(f"Save to: {self.directory}"))
             yield Button("Cancel", id="cancel-download")
+            with Horizontal(classes="actions", id="saved-actions"):
+                yield Button("Open book", id="open-saved")
+                yield Button("Show folder", id="show-saved")
             yield Label("", id="official-status")
             yield Button(
                 "Download official Gutenberg edition", id="official-download", disabled=True
@@ -458,6 +549,7 @@ class DownloadScreen(ResponsiveScreen):
 
     def on_mount(self):
         self.query_one("#official-download", Button).display = False
+        self.query_one("#saved-actions").display = False
         self.transfer()
 
     @on(Button.Pressed, "#official-download")
@@ -497,6 +589,39 @@ class DownloadScreen(ResponsiveScreen):
         button = self.query_one("#official-download", Button)
         button.disabled = official is None
         button.display = official is not None
+
+    def saved(self, result):
+        self.saved_path = result["path"]
+        self.bytes_received = result["bytes"]
+        self.finish(
+            (
+                "Already downloaded; local checksum verified: "
+                if result.get("already_downloaded")
+                else (
+                    "Official EPUB saved and integrity checked: "
+                    if self.book.source == "gutenberg"
+                    else "Saved and checksum verified: "
+                )
+            )
+            + result["path"]
+            + ("\nHistory could not be saved." if result.get("history_warning") else ""),
+            True,
+        )
+        self.query_one("#saved-actions").display = True
+
+    @on(Button.Pressed, "#open-saved")
+    @on(Button.Pressed, "#show-saved")
+    def open_download(self, event):
+        event.stop()
+        if self.saved_path:
+            self.launch_saved(self.saved_path, event.button.id == "show-saved")
+
+    @work(thread=True)
+    def launch_saved(self, path, folder):
+        try:
+            open_saved(path, folder)
+        except AnnaError as exc:
+            self.app.call_from_thread(self.query_one("#download-status", Label).update, str(exc))
 
     def on_unmount(self):
         self.cancel_event.set()
@@ -624,16 +749,7 @@ class DownloadScreen(ResponsiveScreen):
                         ),
                         **options,
                     )
-            self.app.call_from_thread(
-                self.finish,
-                (
-                    "Official EPUB saved and integrity checked: "
-                    if book.source == "gutenberg"
-                    else "Saved and checksum verified: "
-                )
-                + result["path"],
-                True,
-            )
+            self.app.call_from_thread(self.saved, result)
         except DownloadCancelledError:
             self.app.call_from_thread(
                 self.finish, "Cancelled. No unfinished book was saved.", False
@@ -665,6 +781,9 @@ class AnnaApp(App):
              color: $accent; text-style: bold; }
     #search-row { height: 3; padding: 0 2; }
     #query { width: 1fr; }
+    #search-tools { height: 3; padding: 0 2; }
+    #sort { width: 1fr; }
+    #history-results { height: 1fr; }
     #filters { height: 3; padding: 0 2; }
     #author { width: 1fr; }
     #language { width: 14; margin: 0 1; }
@@ -725,7 +844,11 @@ class AnnaApp(App):
         self.preferences = dict(preferences or load_config())
         self.client_factory = client_factory
         self.books = []
+        self.search_spec = None
+        self.search_page = 0
+        self.search_busy = False
         self.detail_cache = {}
+        self.detail_errors = {}
         self.official_cache = {}
         self.selected_book = None
         self.preview_timer = None
@@ -766,6 +889,22 @@ class AnnaApp(App):
                     allow_blank=False,
                     id="format",
                 )
+            with Horizontal(id="search-tools"):
+                yield Select(
+                    [
+                        ("Relevance", "relevance"),
+                        ("Smallest file", "smallest"),
+                        ("Largest file", "largest"),
+                        ("Newest publication", "newest"),
+                        ("Oldest publication", "oldest"),
+                        ("Recently added", "newest_added"),
+                    ],
+                    value="relevance",
+                    allow_blank=False,
+                    id="sort",
+                )
+                yield Button("Load more", id="load-more", disabled=True)
+                yield Button("History", id="history")
             yield Label("Search → choose an edition → download to your Books folder.", id="status")
             with Horizontal(id="body"):
                 with Vertical(id="list-pane"):
@@ -831,6 +970,7 @@ class AnnaApp(App):
             return
         self.client_options.update(options)
         self.detail_cache.clear()
+        self.detail_errors.clear()
         self.official_cache.clear()
         self.notify("Browser session saved. It will be reused automatically.")
         if self.connect_only:
@@ -877,10 +1017,37 @@ class AnnaApp(App):
             Book("", "Searching…", ""), self.preferences["directory"]
         )
         self.query_one("#status", Label).update("Searching…")
-        self.search_books(query, author, language, str(book_format))
+        self.search_page = 0
+        self.search_spec = (
+            query,
+            author,
+            language,
+            str(book_format),
+            str(self.query_one("#sort", Select).value),
+        )
+        self.fetch_search(1)
+
+    @on(Button.Pressed, "#load-more")
+    def more_results(self):
+        if self.search_spec and not self.search_busy:
+            self.fetch_search(self.search_page + 1)
+
+    @on(Select.Changed, "#format")
+    @on(Select.Changed, "#sort")
+    def sort_changed(self):
+        if self.search_spec:
+            self.submit_search()
+
+    def fetch_search(self, page):
+        if self.search_spec is None:
+            return
+        self.search_busy = True
+        self.query_one("#load-more", Button).disabled = True
+        self.query_one("#status", Label).update(f"Searching page {page}…")
+        self.search_books(*self.search_spec, page)
 
     @work(thread=True, exclusive=True, group="search")
-    def search_books(self, query, author, language, book_format):
+    def search_books(self, query, author, language, book_format, sort, page):
         worker = get_current_worker()
         try:
             with self.client_factory(**self.client_options) as client:
@@ -888,12 +1055,57 @@ class AnnaApp(App):
                     query + (" " + author if author else ""),
                     lang=() if language in ("", "*") else (language,),
                     ext=() if book_format == "*" else (book_format,),
-                    page=1,
+                    page=page,
+                    sort="" if sort == "relevance" else sort,
                 )
-            if author:
-                books = [book for book in books if author_matches(book.author, author)]
-            if not worker.is_cancelled:
-                self.call_from_thread(self.show_results, books)
+                has_results = bool(books)
+                if author:
+                    books = [book for book in books if author_matches(book.author, author)]
+                books = list({book.md5: book for book in books}.values())
+                details = {}
+                errors = {}
+                deadline = time.monotonic() + 45
+                stopped = None
+                configured = client.http.timeout if isinstance(client, Client) else None
+                for index, selected in enumerate(books, 1):
+                    if worker.is_cancelled:
+                        return
+                    if selected.md5 in self.detail_cache:
+                        continue
+                    self.call_from_thread(
+                        self.query_one("#status", Label).update,
+                        f"Loading edition details {index}/{len(books)}…",
+                    )
+                    remaining = deadline - time.monotonic()
+                    if stopped is not None or remaining <= 0:
+                        errors[selected.md5] = stopped or (
+                            "Detail loading timed out. Search again to retry.",
+                            None,
+                        )
+                        continue
+                    if isinstance(client, Client) and configured is not None:
+                        client.http.timeout = httpx.Timeout(
+                            **{
+                                name: min(value, 10, remaining)
+                                if value is not None
+                                else min(10, remaining)
+                                for name, value in configured.as_dict().items()
+                            }
+                        )
+                    try:
+                        book = client.info(selected.md5)
+                        details[selected.md5] = (book, {})
+                        if time.monotonic() < deadline:
+                            details[selected.md5] = (book, optional_statistics(client, book))
+                    except (AnnaError, httpx.HTTPError, OSError) as exc:
+                        error = (error_message(exc), getattr(exc, "origin", None))
+                        errors[selected.md5] = error
+                        if isinstance(exc, (RateLimitError, ChallengeError)):
+                            stopped = error
+                if not worker.is_cancelled:
+                    self.call_from_thread(
+                        self.accept_page, books, page, has_results, details, errors
+                    )
         except (AnnaError, httpx.HTTPError, OSError) as exc:
             if not worker.is_cancelled:
                 self.call_from_thread(
@@ -903,8 +1115,48 @@ class AnnaApp(App):
                 )
 
     def show_search_error(self, message, origin=None):
+        self.search_busy = False
+        self.query_one("#load-more", Button).disabled = self.search_spec is None
         self.verification_origin = origin
         self.query_one("#status", Label).update(Text(message))
+
+    def accept_page(self, books, page, has_results, details, errors):
+        self.detail_cache.update(details)
+        for book in books:
+            self.detail_errors.pop(book.md5, None)
+        self.detail_errors.update(errors)
+        self.search_finished(books, page, has_results)
+        if errors:
+            label = self.query_one("#status", Label)
+            label.update(
+                f"{len(self.books)} editions · {len(errors)} details unavailable · "
+                "Search again or use F2 if a browser check is required"
+            )
+
+    def search_finished(self, books, page, has_results):
+        self.search_busy = False
+        self.search_page = page
+        highlighted = self.query_one("#results", OptionList).highlighted
+        previous = list(self.books) if page > 1 else []
+        seen = {book.md5 for book in previous}
+        combined = previous
+        for book in books:
+            if book.md5 not in seen:
+                combined.append(book)
+                seen.add(book.md5)
+        self.show_results(combined)
+        if page > 1 and highlighted is not None and combined:
+            self.query_one("#results", OptionList).highlighted = highlighted
+        self.query_one("#load-more", Button).disabled = not has_results
+        self.query_one("#status", Label).update(
+            ("No matching books · " if not combined else f"{len(combined)} editions · ")
+            + f"page {page} · "
+            + ("Load more to keep searching" if has_results else "No further results")
+        )
+
+    @on(Button.Pressed, "#history")
+    def open_history(self):
+        self.push_screen(HistoryScreen())
 
     def show_results(self, books):
         self.books = books
@@ -914,7 +1166,11 @@ class AnnaApp(App):
             label = Text()
             label.append(book.title, style="bold")
             label.append(f"\n{book.author or 'Unknown author'}")
-            label.append(f"\n{book_summary(book)}\n")
+            summary = book_summary(book)
+            cached = self.detail_cache.get(book.md5)
+            if cached and "downloads_total" in cached[1]:
+                summary += f" · {cached[1]['downloads_total']:,} downloads"
+            label.append(f"\n{summary}\n")
             results.add_option(label)
         self.query_one("#status", Label).update(
             f"{len(books)} editions · ↑↓ browse · Enter opens details"
@@ -939,7 +1195,13 @@ class AnnaApp(App):
         pane.query_one("#download-book", Button).disabled = True
         if self.preview_timer is not None:
             self.preview_timer.stop()
-        self.preview_timer = self.set_timer(0.2, self.load_preview)
+        cached = self.detail_cache.get(self.selected_book.md5)
+        if cached is not None:
+            self.show_preview(self.selected_book.md5, *cached)
+        elif self.selected_book.md5 in self.detail_errors:
+            self.preview_error(self.selected_book.md5, *self.detail_errors[self.selected_book.md5])
+        else:
+            self.preview_timer = self.set_timer(0.2, self.load_preview)
 
     @work(thread=True, exclusive=True, group="preview")
     def load_preview(self):
@@ -1024,6 +1286,8 @@ class AnnaApp(App):
                     self.client_options,
                     Path(self.preferences["directory"]).expanduser(),
                     self.client_factory,
+                    cached=self.detail_cache.get(self.books[event.option_index].md5),
+                    preload_error=self.detail_errors.get(self.books[event.option_index].md5),
                 ),
                 self.book_selected,
             )

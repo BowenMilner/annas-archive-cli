@@ -25,6 +25,7 @@ from anna.errors import (
     ParseError,
     RateLimitError,
 )
+from anna.library import save_download
 from anna.parsing import Book, document, parse_info, parse_search, record_id, text
 from anna.session import load_session, preferred_origin, remember_origin, save_session
 
@@ -41,7 +42,11 @@ def check_cancelled(cancelled):
         raise DownloadCancelledError("Download cancelled; unfinished file removed.")
 
 
-def download_record(
+def download_record(client, book: Book, **options) -> dict:
+    return save_download(book, lambda **kw: _download_record(client, book, **kw), **options)
+
+
+def _download_record(
     client,
     book: Book,
     *,

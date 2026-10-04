@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0a11 — search further and keep your downloads
+
+- Add Bookfinder sorting and Load more, retaining filters and selection, removing
+  repeated editions and allowing failed pages to be retried. Format changes rerun search.
+- Preload page details/statistics and reuse them in both wide previews and narrow
+  details views; show progress and stop extra archive fetches on rate limits/checks.
+- Record successful downloads locally and provide a History view and CLI command.
+- Reuse recorded files only after checking size and checksum; explicit output or
+  source selection requests a fresh download. Missing/damaged files are not reused.
+- Give record downloads readable author/title filenames with an edition identifier;
+  preserve explicit output filenames and direct-URL naming.
+- Add deliberate Open book and Show folder actions after success and in History.
+- Update installation instructions to use the merged default branch.
+
 ## 0.3.0a10 — distinguish upstream gateway failures
 
 - Report HTTP 502 and 504 as upstream failures rather than suggesting a mirror,
