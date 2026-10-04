@@ -440,3 +440,29 @@ every route or every collection, nor exclude all inherited request/session bugs.
 A completed human-verified same-edition browser download, followed by comparison
 of its unchanged generated file URL and browser identity, remains the appropriate
 control for distinguishing a client-specific failure from that route's availability.
+
+## Exact archive download accepted after recovery — 4 October 2026
+
+After the user reported service recovery, the installed `0.3.0a10` backend
+completed automatic mirror selection, record inspection and the first advertised
+free partner route for the originally selected edition. `.pk` served the record
+and recovered the partner page's initial verification response using the existing
+bounded route retry. `b4mcx2ml.net` then returned HTTP 200 and the complete ebook.
+No desktop interaction, human check, P2P, VPN change or edition substitution was
+used. Earlier statements of unresolved acceptance above describe their respective
+historical checks; this result closes that exact-file acceptance gate.
+
+- Catalogue MD5: `fb73d4fd19b0da98923365cb85a03a2b`.
+- Received and expected size: 24,837,384 bytes.
+- Received MD5: `fb73d4fd19b0da98923365cb85a03a2b`.
+- EPUB mimetype: `application/epub+zip`.
+- Every ZIP entry CRC: passed.
+- Total record-to-verified-file elapsed time: 13.5 seconds.
+- Check started at 2026-10-04 01:16:26 UTC (11:46:26 in Adelaide).
+- Verified file saved as `~/Books/annas-arch-fb73d4fd19b0.epub` without overwriting.
+
+This was a real network transfer through the installed backend, initially into a
+temporary directory and published to Books only after the exact checksum, size
+and EPUB integrity checks passed. It establishes recovery for this selected file
+and route on this host; it does not guarantee future availability of every route.
+No additional product changes were required for this successful recovery check.
