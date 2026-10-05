@@ -1,5 +1,6 @@
 import io
 import zipfile
+from pathlib import Path
 
 import httpx
 import pytest
@@ -60,9 +61,10 @@ def test_explicit_official_edition_has_its_own_identity_and_integrity(tmp_path):
         assert original.md5 == "a" * 32
         result = download_edition(client, book, directory=tmp_path)
         assert result["bytes"] == len(epub())
-        assert (tmp_path / "gutenberg-1342-illustrated.epub").read_bytes() == epub()
+        assert Path(result["path"]).read_bytes() == epub()
+        assert download_edition(client, book, directory=tmp_path)["already_downloaded"]
         with pytest.raises(FileExistsError):
-            download_edition(client, book, directory=tmp_path)
+            download_edition(client, book, directory=tmp_path, output=Path(result["path"]))
 
 
 @pytest.mark.parametrize(

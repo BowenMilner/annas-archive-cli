@@ -368,7 +368,7 @@ def test_failed_archive_source_offers_explicit_official_download(tmp_path, monke
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert len(app.screen_stack) == 2
-            assert (tmp_path / "gutenberg-1342-illustrated.epub").read_bytes() == epub()
+            assert next(tmp_path.glob("*.epub")).read_bytes() == epub()
             assert "integrity checked" in str(screen.query_one("#download-status", Label).render())
 
     asyncio.run(scenario())

@@ -68,6 +68,7 @@ def main():
         env.pop("PYTHONIOENCODING", None)
     try:
         with tempfile.TemporaryDirectory() as directory:
+            env["ANNA_CONFIG"] = str(Path(directory) / "settings" / "config.json")
 
             def run(*commands, success=True):
                 result = subprocess.run(
@@ -92,6 +93,12 @@ def main():
             assert not result.stderr, result.stderr
             assert json.loads(result.stdout)["md5"] == MD5
             assert Path(directory, "book.pdf").read_bytes() == BOOK
+            receipts = json.loads(run("history", "--json").stdout)
+            assert len(receipts) == 1 and receipts[0]["identity"] == MD5
+            reused = json.loads(run("download", MD5, "--json").stdout)
+            assert (
+                reused["already_downloaded"] and reused["path"] == json.loads(result.stdout)["path"]
+            )
             error = json.loads(
                 run("download", MD5, "-o", "book.pdf", "--json", success=False).stdout
             )
