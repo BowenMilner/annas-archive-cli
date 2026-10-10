@@ -9,6 +9,7 @@ final class CatalogueBrowser: NSObject, ObservableObject, WKNavigationDelegate, 
     let webView: WKWebView
     @Published var browserVisible = false
     @Published var browserTitle = "Browser check"
+    @Published var currentHost = ""
     @Published var transferStatus: String?
     @Published var errorMessage: String?
     @Published var isDownloading = false
@@ -31,6 +32,13 @@ final class CatalogueBrowser: NSObject, ObservableObject, WKNavigationDelegate, 
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
+        // A terminated foreground transfer may leave a partial file; never publish it on relaunch.
+        let temporary = FileManager.default.temporaryDirectory
+        if let files = try? FileManager.default.contentsOfDirectory(at: temporary, includingPropertiesForKeys: nil) {
+            for file in files where file.lastPathComponent.hasPrefix("bookfinder-") && file.pathExtension == "partial" {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
     }
 
     func extract<T: Decodable>(_ type: T.Type, mode: String, md5: String = "") async throws -> T {
@@ -91,7 +99,11 @@ final class CatalogueBrowser: NSObject, ObservableObject, WKNavigationDelegate, 
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        currentHost = webView.url?.host ?? ""
         if navigation === self.navigation { finish(responseError) }
+    }
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        currentHost = webView.url?.host ?? ""
     }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         if navigation === self.navigation { finish(responseError ?? error) }

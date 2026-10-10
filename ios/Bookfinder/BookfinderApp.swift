@@ -203,29 +203,30 @@ struct DetailView: View {
     @ObservedObject var search: SearchModel
     @ObservedObject var browser: CatalogueBrowser
     @Environment(\.dismiss) private var dismiss
+    private var current: Book { search.detail ?? book }
     var body: some View {
         NavigationStack {
             List {
-                Section { BookRow(book: book) }
+                Section { BookRow(book: current) }
                 if search.detailLoading { ProgressView("Loading edition…") }
                 if let error = search.detailError {
                     Section {
                         Text(error)
                         if let url = search.challengedURL { Button("Open browser check") { browser.showVerification(url) } }
-                        Button("Retry edition") { search.inspect(book) }.disabled(browser.browserVisible)
+                        Button("Retry edition") { search.inspect(current) }.disabled(browser.browserVisible)
                     }
                 }
-                if !book.publisher.isEmpty { Section("Publisher") { Text(book.publisher) } }
-                if !book.description.isEmpty { Section("About this edition") { Text(book.description) } }
+                if !current.publisher.isEmpty { Section("Publisher") { Text(current.publisher) } }
+                if !current.description.isEmpty { Section("About this edition") { Text(current.description) } }
                 Section("Download sources") {
                     Text("Choose a source and use its download control. Any browser check or queue stays visible. Bookfinder verifies the selected edition’s checksum before saving.")
                         .font(.footnote).foregroundStyle(.secondary)
-                    ForEach(book.links.filter { $0.kind != "fast" }) { source in
-                        Button { browser.openSource(source, book: book) } label: {
+                    ForEach(current.links.filter { $0.kind != "fast" }) { source in
+                        Button { browser.openSource(source, book: current) } label: {
                             Label(source.label, systemImage: "arrow.down.circle")
                         }.disabled(search.detailLoading || browser.isDownloading)
                     }
-                    if !search.detailLoading && book.links.filter({ $0.kind != "fast" }).isEmpty {
+                    if !search.detailLoading && current.links.filter({ $0.kind != "fast" }).isEmpty {
                         Text("No free HTTP sources listed for this edition.").foregroundStyle(.secondary)
                     }
                 }
@@ -250,7 +251,7 @@ struct BrowserView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if let host = browser.webView.url?.host { Text(host).font(.caption).padding(6) }
+                if !browser.currentHost.isEmpty { Text(browser.currentHost).font(.caption).padding(6) }
                 if let status = browser.transferStatus { Text(status).font(.callout).padding() }
                 if let error = browser.errorMessage { Text(error).font(.callout).foregroundStyle(.red).padding() }
                 if browser.isDownloading {

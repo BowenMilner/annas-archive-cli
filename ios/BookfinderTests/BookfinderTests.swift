@@ -25,7 +25,9 @@ final class BookfinderTests: XCTestCase, WKNavigationDelegate {
         browser.webView.navigationDelegate = self
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             loaded = continuation
-            browser.webView.loadHTMLString(html, baseURL: URL(string: "https://annas-archive.gd"))
+            // Fixtures exercise DOM extraction only: block cover images and every remote request.
+            let policy = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-eval' 'unsafe-inline'; style-src 'unsafe-inline'\">"
+            browser.webView.loadHTMLString(policy + html, baseURL: URL(string: "https://annas-archive.gd"))
         }
         return try await browser.extract(type, mode: mode, md5: md5)
     }
@@ -85,6 +87,7 @@ final class BookfinderTests: XCTestCase, WKNavigationDelegate {
         let url = Catalogue.searchURL(origin: Catalogue.mirrors[0], query: "A&B + café", language: "en", format: "epub")
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!
         XCTAssertEqual(items.first { $0.name == "q" }?.value, "A&B + café")
+        XCTAssertTrue(url.absoluteString.contains("%2B"))
         XCTAssertTrue(Catalogue.authorMatches("Austen, Jane", requested: "Jane Austen"))
         XCTAssertFalse(Catalogue.authorMatches("Jane Austen", requested: "Jan"))
     }
@@ -113,6 +116,21 @@ final class BookfinderTests: XCTestCase, WKNavigationDelegate {
         defer { try? FileManager.default.removeItem(at: file) }
         try data.write(to: file)
         XCTAssertThrowsError(try FileVerifier.validate(file, book: book))
+    }
+
+    func testEPUBCRCValidationChecksEveryEntry() throws {
+        for (name, valid) in [("valid-epub", true), ("bad-crc-epub", false)] {
+            let fixture = Bundle(for: Self.self).url(forResource: name, withExtension: "base64", subdirectory: "Fixtures")!
+            let encoded = try String(contentsOf: fixture, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+            let data = Data(base64Encoded: encoded)!
+            let md5 = Insecure.MD5.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            let book = Book(md5: md5, title: "EPUB", url: URL(string: "https://annas-archive.gd")!, format: "epub")
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: file) }
+            try data.write(to: file)
+            if valid { XCTAssertNoThrow(try FileVerifier.validate(file, book: book)) }
+            else { XCTAssertThrowsError(try FileVerifier.validate(file, book: book)) }
+        }
     }
 
     func testLibraryPersistsVerifiedFileWithoutUsingServerFilename() throws {

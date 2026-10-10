@@ -53,6 +53,8 @@ enum Catalogue {
         parts.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "display", value: "")]
         if !language.isEmpty { parts.queryItems?.append(URLQueryItem(name: "lang", value: language)) }
         if !format.isEmpty { parts.queryItems?.append(URLQueryItem(name: "ext", value: format)) }
+        // Catalogue query parsing follows form semantics, where a literal + means a space.
+        parts.percentEncodedQuery = parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
         return parts.url!
     }
     static func authorMatches(_ actual: String, requested: String) -> Bool {
