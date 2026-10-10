@@ -1,0 +1,45 @@
+name: iOS Bookfinder
+on:
+  pull_request:
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  push:
+    branches: ['codex/bookfinder-ios']
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install project generator
+        run: brew install xcodegen
+      - name: Generate project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Compile app and tests for Simulator
+        working-directory: ios
+        run: xcodebuild -project Bookfinder.xcodeproj -scheme Bookfinder -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO build-for-testing
+      - name: Run adapter and integrity tests
+        timeout-minutes: 10
+        working-directory: ios
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; devices=json.load(sys.stdin)["devices"]; print(next(d["udid"] for runtime, items in devices.items() if "iOS" in runtime for d in items if d["name"].startswith("iPhone")))')
+          xcodebuild -project Bookfinder.xcodeproj -scheme Bookfinder -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator -resultBundlePath build/Tests.xcresult CODE_SIGNING_ALLOWED=NO test-without-building
+      - name: Build and verify unsigned IPA
+        run: bash ios/build.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Bookfinder-unsigned-iOS
+          path: ios/build/Bookfinder-unsigned.ipa
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: Bookfinder-iOS-test-results
+          path: ios/build/Tests.xcresult
